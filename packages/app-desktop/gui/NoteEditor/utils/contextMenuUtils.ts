@@ -38,6 +38,9 @@ export interface ContextMenuOptions {
 	linkToCopy: string;
 	textToCopy: string;
 	htmlToCopy: string;
+	// Plain-text selection, used for actions that need human-readable text rather than
+	// the clipboard-oriented textToCopy/htmlToCopy (e.g. searching the web for it).
+	selectedText?: string;
 	insertContent: (content: string)=> void;
 	isReadOnly?: boolean;
 	fireEditorEvent: (event: TinyMceEditorEvents)=> void;
@@ -65,6 +68,9 @@ export async function resourceInfo(options: ContextMenuOptions) {
 
 export function textToDataUri(text: string, mime: string): string {
 	return `data:${mime};base64,${Buffer.from(text).toString('base64')}`;
+}
+export function googleSearchUrl(query: string): string {
+	return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
 }
 export const svgDimensions = (document: Document, svg: string) => {
 	let width: number;

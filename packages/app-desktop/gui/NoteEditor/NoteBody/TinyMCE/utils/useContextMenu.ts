@@ -73,6 +73,7 @@ export default function(editor: Editor, plugins: PluginStates, dispatch: Dispatc
 				linkToOpen: linkUrl,
 				textToCopy: null,
 				htmlToCopy: editor.selection ? editor.selection.getContent() : '',
+				selectedText: editor.selection ? editor.selection.getContent({ format: 'text' }) : '',
 				insertContent: (content: string) => {
 					editor.insertContent(content);
 				},

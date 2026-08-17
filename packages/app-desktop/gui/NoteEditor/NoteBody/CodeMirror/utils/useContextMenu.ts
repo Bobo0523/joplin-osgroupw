@@ -11,7 +11,7 @@ import type CodeMirrorControl from '@joplin/editor/CodeMirror/CodeMirrorControl'
 import bridge from '../../../../../services/bridge';
 import Setting from '@joplin/lib/models/Setting';
 import Resource from '@joplin/lib/models/Resource';
-import { ContextMenuItemType, ContextMenuOptions, buildMenuItems, handleEditorContextMenuFilter, resolveContextMenuItemType } from '../../../utils/contextMenuUtils';
+import { ContextMenuItemType, ContextMenuOptions, buildMenuItems, googleSearchUrl, handleEditorContextMenuFilter, resolveContextMenuItemType } from '../../../utils/contextMenuUtils';
 import { menuItems } from '../../../utils/contextMenu';
 import isItemId from '@joplin/lib/models/utils/isItemId';
 import { extractResourceUrls } from '@joplin/lib/urlUtils';
@@ -176,6 +176,13 @@ const useContextMenu = (props: ContextMenuProps) => {
 			menu.append(new MenuItem({ label: _('Copy'), enabled: hasSelectedText, click: () => props.editorCopyText() }));
 			menu.append(new MenuItem({ label: _('Paste'), enabled: !isReadOnly, click: () => props.editorPaste() }));
 			menu.append(new MenuItem({ label: _('Paste as Markdown'), enabled: !isReadOnly, click: () => CommandService.instance().execute('pasteAsMarkdown') }));
+			menu.append(new MenuItem({
+				label: _('Search with Google'),
+				enabled: hasSelectedText,
+				click: () => {
+					void bridge().openExternal(googleSearchUrl(editorRef.current.getSelection()));
+				},
+			}));
 		};
 
 		const showResourceContextMenu = async (resourceId: string, type: ResourceMarkupType) => {

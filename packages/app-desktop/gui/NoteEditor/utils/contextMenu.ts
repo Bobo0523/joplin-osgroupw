@@ -3,7 +3,7 @@ import { Dispatch } from 'redux';
 import { _ } from '@joplin/lib/locale';
 import { copyHtmlToClipboard } from './clipboardUtils';
 import bridge from '../../../services/bridge';
-import { ContextMenuItemType, ContextMenuOptions, ContextMenuItems, resourceInfo, textToDataUri, svgUriToPng, svgDimensions, buildMenuItems, ContextMenuItem } from './contextMenuUtils';
+import { ContextMenuItemType, ContextMenuOptions, ContextMenuItems, resourceInfo, textToDataUri, svgUriToPng, svgDimensions, buildMenuItems, ContextMenuItem, googleSearchUrl } from './contextMenuUtils';
 const Menu = bridge().Menu;
 import Resource, { resourceOcrStatusToString } from '@joplin/lib/models/Resource';
 import BaseItem from '@joplin/lib/models/BaseItem';
@@ -268,6 +268,13 @@ export function menuItems(dispatch: Dispatch): ContextMenuItems {
 				handleCopyToClipboard(options);
 			},
 			isActive: (itemType: ContextMenuItemType, options: ContextMenuOptions) => itemType !== ContextMenuItemType.Image && (!!options.textToCopy || !!options.htmlToCopy),
+		},
+		searchWithGoogle: {
+			label: _('Search with Google'),
+			onAction: async (options: ContextMenuOptions) => {
+				await bridge().openExternal(googleSearchUrl(options.selectedText));
+			},
+			isActive: (itemType: ContextMenuItemType, options: ContextMenuOptions) => itemType === ContextMenuItemType.Text && !!options.selectedText,
 		},
 		paste: {
 			label: _('Paste'),
