@@ -49,9 +49,15 @@ export default class NoteListUtils {
 					new MenuItem(menuUtils.commandToStatefulMenuItem('openNoteInNewWindow', singleNoteId)),
 				);
 
-				const cmd = props.watchedNoteFiles.includes(singleNoteId) ? 'stopExternalEditing' : 'startExternalEditing';
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any -- commandToStatefulMenuItem returns lib's MenuItem shape which doesn't structurally match Electron's MenuItemConstructorOptions
-				menu.append(new MenuItem(menuUtils.commandToStatefulMenuItem(cmd, singleNoteId) as any));
+				if (props.watchedNoteFiles.includes(singleNoteId)) {
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any -- commandToStatefulMenuItem returns lib's MenuItem shape which doesn't structurally match Electron's MenuItemConstructorOptions
+					menu.append(new MenuItem(menuUtils.commandToStatefulMenuItem('stopExternalEditing', singleNoteId) as any));
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any -- commandToStatefulMenuItem returns lib's MenuItem shape which doesn't structurally match Electron's MenuItemConstructorOptions
+					menu.append(new MenuItem(menuUtils.commandToStatefulMenuItem('reopenExternalEditing', singleNoteId) as any));
+				} else {
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any -- commandToStatefulMenuItem returns lib's MenuItem shape which doesn't structurally match Electron's MenuItemConstructorOptions
+					menu.append(new MenuItem(menuUtils.commandToStatefulMenuItem('startExternalEditing', singleNoteId) as any));
+				}
 
 				menu.append(new MenuItem({ type: 'separator' }));
 			}

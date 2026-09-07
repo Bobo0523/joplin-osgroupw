@@ -107,6 +107,42 @@ describe('NoteListUtils', () => {
 		]);
 	});
 
+	it('should show stop and reopen options for a note being externally edited', () => {
+		const noteIds = ['noteId1'];
+		const normalNote = {
+			id: 'noteId1',
+		};
+		const menu = NoteListUtils.makeContextMenu(noteIds, {
+			notes: [
+				normalNote,
+			],
+			dispatch: mockDispatch,
+			watchedNoteFiles: ['noteId1'],
+			plugins: {},
+			inConflictFolder: false,
+			customCss: '',
+		});
+
+		expect(menu.items).toEqual([
+			'openNoteInNewWindow',
+			'stopExternalEditing',
+			'reopenExternalEditing',
+			'separator',
+			'setTags',
+			'separator',
+			'toggleNoteType',
+			'moveToFolder',
+			'duplicateNote',
+			'deleteNote',
+			'separator',
+			'Copy Markdown link',
+			'Copy external link',
+			'separator',
+			'Export',
+
+		]);
+	});
+
 	it('should show options when more than one note is selected', () => {
 		const noteIds = ['noteId1', 'noteId2'];
 		const menu = NoteListUtils.makeContextMenu(noteIds, {
