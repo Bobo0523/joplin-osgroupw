@@ -48,6 +48,7 @@ import useTextPatternsLookup, { TextPatternContext } from './utils/useTextPatter
 import { toFileProtocolPath } from '@joplin/utils/path';
 import { RenderResultPluginAsset } from '@joplin/renderer/types';
 import useCursorPositioning from './utils/useCursorPositioning';
+import useHideOverflowOnOutsideClick from './utils/useHideOverflowOnOutsideClick';
 
 const logger = Logger.create('TinyMCE');
 
@@ -408,6 +409,7 @@ const TinyMCE = (props: NoteBodyEditorProps, ref: Ref<NoteBodyEditorRef>) => {
 
 	useWebViewApi(editor, editorContainerDom?.defaultView);
 	const { resetModifiedTitles: resetLinkTooltips } = useLinkTooltips(editor);
+	useHideOverflowOnOutsideClick(editor);
 
 	useEffect(() => {
 		if (!editorContainerDom) return () => {};
