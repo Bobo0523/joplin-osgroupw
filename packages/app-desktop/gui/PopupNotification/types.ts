@@ -15,6 +15,8 @@ export const NotificationType = ToastType;
 
 export interface PopupOptions {
 	type?: NotificationType;
+	// Window the popup should be shown in. If omitted, the popup is shown in all windows.
+	windowId?: string;
 }
 
 export interface PopupControl {

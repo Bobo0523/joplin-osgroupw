@@ -17,6 +17,7 @@ interface PopupSpec {
 	dismissed: boolean;
 	type: NotificationType;
 	content: ()=> React.ReactNode;
+	windowId?: string;
 }
 
 const PopupNotificationProvider: React.FC<Props> = props => {
@@ -74,12 +75,13 @@ const PopupNotificationProvider: React.FC<Props> = props => {
 		};
 
 		const manager: PopupManager = {
-			createPopup: (content, { type } = {}): PopupHandle => {
+			createPopup: (content, { type, windowId } = {}): PopupHandle => {
 				const key = `popup-${nextPopupKey.current++}`;
 				const newPopup: PopupSpec = {
 					key,
 					content,
 					type,
+					windowId,
 					dismissed: false,
 				};
 

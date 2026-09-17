@@ -1,4 +1,5 @@
 import Logger from '@joplin/utils/Logger';
+import { defaultWindowId } from '@joplin/lib/reducer';
 
 const logger = Logger.create('dialogs');
 
@@ -10,8 +11,15 @@ interface Smalltalk {
 
 class Dialogs {
 	private activeWindow: Window|null;
-	public setActiveWindow(win: Window) {
+	private activeWindowId: string = defaultWindowId;
+
+	public setActiveWindow(win: Window, windowId: string) {
 		this.activeWindow = win;
+		this.activeWindowId = windowId;
+	}
+
+	public getActiveWindowId() {
+		return this.activeWindowId;
 	}
 
 	private get smalltalk(): Smalltalk {

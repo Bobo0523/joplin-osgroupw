@@ -8,6 +8,7 @@ import { Dispatch } from 'redux';
 import { PopupNotificationContext } from '../PopupNotification/PopupNotificationProvider';
 import { NotificationType } from '../PopupNotification/types';
 import TrashNotificationMessage from './TrashNotificationMessage';
+import dialogs from '../dialogs';
 
 interface Props {
 	lastDeletion: StateLastDeletion;
@@ -53,7 +54,7 @@ export default (props: Props) => {
 		};
 		const notification = popupManager.createPopup(() => (
 			<TrashNotificationMessage message={msg} onCancel={handleCancelClick}/>
-		), { type: NotificationType.Success });
+		), { type: NotificationType.Success, windowId: dialogs.getActiveWindowId() });
 		notification.scheduleDismiss();
 	}, [props.lastDeletion, props.dispatch, popupManager]);
 

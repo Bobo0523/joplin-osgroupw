@@ -25,6 +25,7 @@ import PluginManager from '@joplin/lib/services/PluginManager';
 
 interface Props {
 	dispatch: Dispatch;
+	windowId: string;
 	themeId: number;
 	plugins: PluginStates;
 	pluginHtmlContents: PluginHtmlContents;
@@ -57,12 +58,12 @@ const defaultDialogState: DialogState = {
 };
 
 // Certain dialog libraries need a reference to the active window:
-const useSyncActiveWindow = (containerWindow: Window|null) => {
+const useSyncActiveWindow = (containerWindow: Window|null, windowId: string) => {
 	useEffect(() => {
 		if (!containerWindow) return () => {};
 
 		const onFocusCallback = () => {
-			dialogs.setActiveWindow(containerWindow);
+			dialogs.setActiveWindow(containerWindow, windowId);
 		};
 		if (containerWindow.document.hasFocus()) {
 			onFocusCallback();
@@ -73,7 +74,7 @@ const useSyncActiveWindow = (containerWindow: Window|null) => {
 		return () => {
 			containerWindow.removeEventListener('focus', onFocusCallback);
 		};
-	}, [containerWindow]);
+	}, [containerWindow, windowId]);
 };
 
 const WindowCommandsAndDialogs: React.FC<Props> = props => {
@@ -93,7 +94,7 @@ const WindowCommandsAndDialogs: React.FC<Props> = props => {
 		editorNoteStatuses: props.editorNoteStatuses,
 		setDialogState,
 	});
-	useSyncActiveWindow(containerDocument?.defaultView);
+	useSyncActiveWindow(containerDocument?.defaultView, props.windowId);
 
 	const onDialogHideCallbacks = useMemo(() => {
 		type OnHideCallbacks = Partial<Record<keyof DialogState, ()=> void>>;
