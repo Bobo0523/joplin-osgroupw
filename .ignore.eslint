@@ -881,13 +881,17 @@ packages/app-mobile/components/screens/ConfigScreen/FileSystemPathSelector.js
 packages/app-mobile/components/screens/ConfigScreen/JoplinCloudConfig.js
 packages/app-mobile/components/screens/ConfigScreen/NoteExportSection/ExportDebugReportButton.js
 packages/app-mobile/components/screens/ConfigScreen/NoteExportSection/ExportProfileButton.js
+packages/app-mobile/components/screens/ConfigScreen/NoteExportSection/ExportTaskButton.js
 packages/app-mobile/components/screens/ConfigScreen/NoteExportSection/NoteExportButton.test.js
 packages/app-mobile/components/screens/ConfigScreen/NoteExportSection/NoteExportButton.js
+packages/app-mobile/components/screens/ConfigScreen/NoteExportSection/NoteExportToDeviceButton.test.js
+packages/app-mobile/components/screens/ConfigScreen/NoteExportSection/NoteExportToDeviceButton.js
 packages/app-mobile/components/screens/ConfigScreen/NoteExportSection/NoteImportButton.js
 packages/app-mobile/components/screens/ConfigScreen/NoteExportSection/TaskButton.js
 packages/app-mobile/components/screens/ConfigScreen/NoteExportSection/utils/exportAllFolders.js
 packages/app-mobile/components/screens/ConfigScreen/NoteExportSection/utils/exportDebugReport.js
 packages/app-mobile/components/screens/ConfigScreen/NoteExportSection/utils/exportProfile.js
+packages/app-mobile/components/screens/ConfigScreen/NoteExportSection/utils/makeExportTask.js
 packages/app-mobile/components/screens/ConfigScreen/NoteExportSection/utils/makeImportExportCacheDirectory.js
 packages/app-mobile/components/screens/ConfigScreen/NoteLockConfig.test.js
 packages/app-mobile/components/screens/ConfigScreen/NoteLockConfig.js
@@ -1085,6 +1089,7 @@ packages/app-mobile/utils/polyfills/bufferPolyfill.js
 packages/app-mobile/utils/polyfills/crypto-polyfill/index.js
 packages/app-mobile/utils/polyfills/index.js
 packages/app-mobile/utils/polyfills/index.web.js
+packages/app-mobile/utils/saveFileToDevice.js
 packages/app-mobile/utils/setupNotifications.js
 packages/app-mobile/utils/shareFile.js
 packages/app-mobile/utils/shareHandler.js

@@ -19,6 +19,7 @@ import SyncTargetRegistry from '@joplin/lib/SyncTargetRegistry';
 import biometricAuthenticate from '../../biometrics/biometricAuthenticate';
 import configScreenStyles, { ConfigScreenStyles } from './configScreenStyles';
 import NoteExportButton, { exportButtonDescription, exportButtonDefaultTitle } from './NoteExportSection/NoteExportButton';
+import NoteExportToDeviceButton, { exportToDeviceButtonDescription, exportToDeviceButtonDefaultTitle } from './NoteExportSection/NoteExportToDeviceButton';
 import SettingsButton from './SettingsButton';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { ReactElement, ReactNode } from 'react';
@@ -590,6 +591,12 @@ class ConfigScreenComponent extends BaseScreenComponent<ConfigScreenProps, Confi
 				<NoteExportButton key='export_as_jex_button' styles={this.styles()} />,
 				[exportButtonDefaultTitle(), exportButtonDescription()],
 			);
+			if (shim.fsDriver().isUsingAndroidSAF()) {
+				addSettingComponent(
+					<NoteExportToDeviceButton key='export_as_jex_to_device_button' styles={this.styles()} />,
+					[exportToDeviceButtonDefaultTitle(), exportToDeviceButtonDescription()],
+				);
+			}
 			const importJexLabel = () => _('Import from JEX');
 			const importJexDescription = () => _('Import notes from a JEX (Joplin Export) file.');
 			addSettingComponent(

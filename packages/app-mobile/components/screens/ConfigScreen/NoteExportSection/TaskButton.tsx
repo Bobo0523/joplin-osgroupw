@@ -26,16 +26,18 @@ export enum TaskStatus {
 	Done,
 }
 
+export type OnRunTaskCallback = (
+	setProgress: OnProgressCallback,
+	setAfterCompleteListener: SetAfterCompleteListenerCallback,
+)=> Promise<TaskResult>;
+
 interface Props {
 	taskName: string;
 	buttonLabel: (status: TaskStatus)=> string;
 	finishedLabel: string;
 	description?: string;
 	styles: ConfigScreenStyles;
-	onRunTask: (
-		setProgress: OnProgressCallback,
-		setAfterCompleteListener: SetAfterCompleteListenerCallback,
-	)=> Promise<TaskResult>;
+	onRunTask: OnRunTaskCallback;
 }
 
 const TaskButton: FunctionComponent<Props> = props => {
