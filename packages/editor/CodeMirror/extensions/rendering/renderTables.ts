@@ -920,8 +920,7 @@ const tableTheme = EditorView.theme({
 		margin: '0',
 		padding: '0',
 		boxSizing: 'border-box',
-		whiteSpace: 'pre-wrap',
-		wordBreak: 'break-word',
+		whiteSpace: 'pre',
 	},
 	['& .cm-tw-text:focus']: {
 		outline: 'none',
