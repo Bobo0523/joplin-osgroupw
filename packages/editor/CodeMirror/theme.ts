@@ -225,8 +225,8 @@ const createTheme = (theme: EditorTheme): Extension[] => {
 		},
 
 		'& .cm-highlighted': {
-			color: theme.searchMarkerColor,
-			backgroundColor: theme.searchMarkerBackgroundColor,
+			color: theme.markHighlightColor,
+			backgroundColor: theme.markHighlightBackgroundColor,
 		},
 
 		// Style the search widget. Use ':root' to increase the selector's precedence

@@ -6,3 +6,9 @@
 
 	color: var(--joplin-color);
 }
+
+/* Match the highlight colours used by the Markdown editor and the note viewer. */
+.prosemirror-editor mark {
+	background-color: var(--joplin-mark-highlight-background-color);
+	color: var(--joplin-mark-highlight-color);
+}

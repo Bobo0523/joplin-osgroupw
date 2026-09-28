@@ -398,7 +398,7 @@ export default function(theme: RendererTheme, options: Options = null) {
 
 		mark {
 			background: ${theme.markHighlightBackgroundColor};
-			color: ${theme.searchMarkerColor};
+			color: ${theme.markHighlightColor};
 		}
 
 		/* =============================================== */

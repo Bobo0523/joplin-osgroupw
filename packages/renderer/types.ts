@@ -30,6 +30,7 @@ export interface RendererTheme {
 	tableBackgroundColor?: string;
 	urlColor?: string;
 	markHighlightBackgroundColor?: string;
+	markHighlightColor?: string;
 	searchMarkerColor?: string;
 
 	scrollbarThumbColor?: string;

@@ -50,6 +50,8 @@ const theme: Theme = {
 	raisedColor: '#ffffff',
 	searchMarkerBackgroundColor: '#F7D26E',
 	searchMarkerColor: 'black',
+	markHighlightBackgroundColor: '#FFFF00',
+	markHighlightColor: 'black',
 
 	warningBackgroundColor: '#013F74',
 	destructiveColor: '#F07777',

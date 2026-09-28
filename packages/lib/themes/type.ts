@@ -53,6 +53,10 @@ export interface Theme {
 	searchMarkerBackgroundColor: string;
 	searchMarkerColor: string;
 
+	// Used for ==highlighted== text, in both editors and in the note viewer.
+	markHighlightBackgroundColor: string;
+	markHighlightColor: string;
+
 	warningBackgroundColor: string;
 	destructiveColor: string;
 
