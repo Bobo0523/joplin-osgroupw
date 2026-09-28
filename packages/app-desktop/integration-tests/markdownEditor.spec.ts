@@ -471,6 +471,31 @@ test.describe('markdownEditor', () => {
 		await noteEditor.expectToHaveText('A');
 	});
 
+	test('the delete line command should not skip lines rendered as horizontal rules', async ({ mainWindow, electronApp }) => {
+		const mainScreen = await new MainScreen(mainWindow).setup();
+		await mainScreen.waitFor();
+
+		await mainScreen.createNewNote('Test delete line');
+
+		const noteEditor = mainScreen.noteEditor;
+		await noteEditor.focusCodeMirrorEditor();
+		await mainWindow.keyboard.type('one\ntwo\n***\nfour');
+
+		const editorContent = await noteEditor.contentLocator();
+		const divider = editorContent.locator('hr.cm-md-divider');
+		await expect(divider).toHaveCount(1);
+
+		await editorContent.getByText('one').click();
+		for (let i = 0; i < 3; i++) {
+			await activateMainMenuItem(electronApp, 'Delete line');
+		}
+
+		// Regression test for https://github.com/laurent22/joplin/issues/16687: the line
+		// rendered as a horizontal rule should be deleted in turn, not skipped.
+		await noteEditor.expectToHaveText('four');
+		await expect(divider).toHaveCount(0);
+	});
+
 	test('copying from the preview pane should not include theme background color and should preserve bold formatting', async ({ mainWindow, electronApp }) => {
 		// Set dark theme so background-color would be present in clipboard without the fix
 		await setSettingValue(electronApp, mainWindow, 'theme', 2);

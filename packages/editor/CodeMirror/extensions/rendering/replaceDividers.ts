@@ -43,9 +43,20 @@ const replaceDividers = [
 			flexGrow: 1,
 			flexShrink: 1,
 
-			border: 'none',
-			borderBottom: '2px solid var(--joplin-divider-color)',
 			position: 'relative',
+
+			// The spacing around the divider is padding rather than margin so that the
+			// widget's client rectangle covers the full height of the line. CodeMirror's
+			// vertical cursor motion treats space below the last rectangle on a line as
+			// line padding and skips over the line. See
+			// https://github.com/laurent22/joplin/issues/16687
+			border: 'none',
+			margin: '0',
+			padding: '0.5em 0',
+			boxSizing: 'content-box',
+			height: '2px',
+			backgroundColor: 'var(--joplin-divider-color)',
+			backgroundClip: 'content-box',
 		},
 	}),
 	makeInlineReplaceExtension({
