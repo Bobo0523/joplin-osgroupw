@@ -84,6 +84,11 @@ const declarations: CommandDeclaration[] = [
 		label: () => _('Italic'),
 		iconName: 'material format-italic',
 	},
+	{
+		name: `editor.${EditorCommandType.ToggleHighlighted}`,
+		label: () => _('Highlight'),
+		iconName: 'material format-color-highlight',
+	},
 	...headerDeclarations(),
 	{
 		name: EditorCommandType.ToggleCode,

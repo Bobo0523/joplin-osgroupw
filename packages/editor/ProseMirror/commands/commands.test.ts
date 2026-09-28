@@ -32,6 +32,29 @@ describe('ProseMirror/commands', () => {
 		});
 	});
 
+	test('textHighlight should toggle highlight formatting', () => {
+		const editor = createTestEditor({ html: '<p>Test</p>' });
+
+		selectAll(editor);
+		commands[EditorCommandType.ToggleHighlighted](editor.state, editor.dispatch, editor);
+
+		expect(editor.state.doc.toJSON()).toMatchObject({
+			content: [{
+				type: 'paragraph',
+				content: [{
+					marks: [
+						{ type: 'mark' },
+					],
+					text: 'Test',
+				}],
+			}],
+		});
+
+		commands[EditorCommandType.ToggleHighlighted](editor.state, editor.dispatch, editor);
+
+		expect(editor.state.doc.firstChild.firstChild.marks).toHaveLength(0);
+	});
+
 	test('toggleHeading should add and remove header formatting', () => {
 		const editor = createTestEditor({ html: '<p>Test</p><p>Test 2</p>' });
 

@@ -7,6 +7,7 @@ type StateSelector = (selectionState: SelectionFormatting, searchVisible: boolea
 const commandNameToSelectionState: Record<string, StateSelector> = {
 	[EditorCommandType.ToggleBolded]: state => state.bolded,
 	[EditorCommandType.ToggleItalicized]: state => state.italicized,
+	[EditorCommandType.ToggleHighlighted]: state => state.highlighted,
 	[EditorCommandType.ToggleCode]: state => state.inCode,
 	[EditorCommandType.ToggleMath]: state => state.inMath,
 	[EditorCommandType.ToggleHeading1]: state => state.headerLevel === 1,

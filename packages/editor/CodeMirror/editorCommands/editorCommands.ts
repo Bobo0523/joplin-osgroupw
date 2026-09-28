@@ -5,7 +5,7 @@ import {
 	decreaseIndent, increaseIndent,
 	insertHorizontalRule,
 	toggleBolded, toggleCode,
-	toggleHeaderLevel, toggleItalicized,
+	toggleHeaderLevel, toggleHighlighted, toggleItalicized,
 	toggleList, toggleMath,
 } from './markdownCommands';
 import duplicateLine from './duplicateLine';
@@ -32,6 +32,7 @@ const editorCommands: Record<EditorCommandType, EditorCommandFunction> = {
 
 	[EditorCommandType.ToggleBolded]: toggleBolded,
 	[EditorCommandType.ToggleItalicized]: toggleItalicized,
+	[EditorCommandType.ToggleHighlighted]: toggleHighlighted,
 	[EditorCommandType.ToggleCode]: toggleCode,
 	[EditorCommandType.ToggleMath]: toggleMath,
 	[EditorCommandType.ToggleComment]: toggleComment,

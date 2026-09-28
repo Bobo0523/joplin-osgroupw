@@ -12,6 +12,7 @@ const builtInCommandNames = [
 	'editor.textHeading5',
 	EditorCommandType.ToggleBolded,
 	EditorCommandType.ToggleItalicized,
+	`editor.${EditorCommandType.ToggleHighlighted}`,
 	'-',
 	EditorCommandType.ToggleCode,
 	`editor.${EditorCommandType.ToggleMath}`,
@@ -58,6 +59,14 @@ const allToolbarCommandNamesFromState = (state: AppState) => {
 	if (!mathEnabled) {
 		allCommandNames = allCommandNames.filter(
 			name => name !== `editor.${EditorCommandType.ToggleMath}`,
+		);
+	}
+
+	// Highlighting relies on the ==mark== markup, which is only rendered when the
+	// corresponding Markdown plugin is enabled.
+	if (!state.settings['markdown.plugin.mark']) {
+		allCommandNames = allCommandNames.filter(
+			name => name !== `editor.${EditorCommandType.ToggleHighlighted}`,
 		);
 	}
 

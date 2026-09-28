@@ -14,6 +14,7 @@ import toggleInlineFormatGlobally from '../utils/formatting/toggleInlineFormatGl
 import stripBlockquote from '../utils/markdown/stripBlockquote';
 import renumberSelectedLists from '../utils/markdown/renumberSelectedLists';
 import toggleSelectedLinesStartWith from '../utils/formatting/toggleSelectedLinesStartWith';
+import { highlightTagName } from '../extensions/markdownHighlightExtension';
 
 
 export const toggleBolded: Command = (view: EditorView): boolean => {
@@ -78,6 +79,14 @@ export const toggleItalicized: Command = (view: EditorView): boolean => {
 		view.dispatch(changes);
 	}
 
+	return true;
+};
+
+export const toggleHighlighted: Command = (view: EditorView): boolean => {
+	const spec = RegionSpec.of({ template: '==', nodeName: highlightTagName });
+	const changes = toggleInlineFormatGlobally(view.state, spec);
+
+	view.dispatch(changes);
 	return true;
 };
 

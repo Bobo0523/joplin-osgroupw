@@ -50,6 +50,9 @@ const computeSelectionFormatting = (state: EditorState, globalSpellcheck: boolea
 			case 'Emphasis':
 				formatting.italicized = true;
 				break;
+			case 'Highlight':
+				formatting.highlighted = true;
+				break;
 			case 'ListItem':
 				formatting.listLevel += 1;
 				break;

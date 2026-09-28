@@ -12,6 +12,7 @@ export enum EditorCommandType {
 	// Formatting editor commands
 	ToggleBolded = 'textBold',
 	ToggleItalicized = 'textItalic',
+	ToggleHighlighted = 'textHighlight',
 	ToggleCode = 'textCode',
 	ToggleMath = 'textMath',
 	ToggleComment = 'toggleComment',

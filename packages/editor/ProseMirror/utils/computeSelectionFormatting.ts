@@ -65,6 +65,7 @@ const computeSelectionFormatting = (state: EditorState, settings: EditorSettings
 	}
 	formatting.italicized = hasMark(schema.marks.emphasis);
 	formatting.bolded = hasMark(schema.marks.strong);
+	formatting.highlighted = hasMark(schema.marks.mark);
 
 	if (formatting.unspellCheckableRegion) {
 		formatting.spellChecking = false;

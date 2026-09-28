@@ -2,6 +2,7 @@
 export interface MutableSelectionFormatting {
 	bolded: boolean;
 	italicized: boolean;
+	highlighted: boolean;
 	inChecklist: boolean;
 	inCode: boolean;
 	inUnorderedList: boolean;
@@ -31,6 +32,7 @@ export default SelectionFormatting;
 export const defaultSelectionFormatting: SelectionFormatting = {
 	bolded: false,
 	italicized: false,
+	highlighted: false,
 	inChecklist: false,
 	inCode: false,
 	inUnorderedList: false,
