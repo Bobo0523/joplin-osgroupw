@@ -1,7 +1,10 @@
-import { SqlQuery } from '../types';
+import { Migration } from '../types';
+import { addColumn, column } from '../schema';
 
-export default (): (SqlQuery|string)[] => {
+const migration: Migration = () => {
 	return [
-		'ALTER TABLE `resources` ADD COLUMN `ocr_driver_id` INT NOT NULL DEFAULT "1"',
+		addColumn('resources', 'ocr_driver_id', column.integer(1)),
 	];
 };
+
+export default migration;

@@ -2,6 +2,7 @@
 // https://jestjs.io/docs/en/configuration.html
 
 const baseConfig = require('../../jest.config.base.js');
+const esmModulesConfig = require('../../jest.esmModules.js');
 
 module.exports = {
 	...baseConfig,
@@ -159,9 +160,9 @@ module.exports = {
 	// timers: "real",
 
 	// A map from regular expressions to paths to transformers
-	transform: {
+	...esmModulesConfig({
 		'\\.(ts|tsx)$': 'ts-jest',
-	},
+	}),
 
 	// An array of regexp pattern strings that are matched against all modules before the module loader will automatically return a mock for them
 	// unmockedModulePathPatterns: undefined,

@@ -6,9 +6,9 @@ import readonlyProperties from './readonlyProperties';
 import requestFields from './requestFields';
 import BaseItem from '../../../models/BaseItem';
 import { LoadOptions } from '../../../models/utils/types';
-import { WhereQuery } from '../../../models/utils/paginatedFeed';
+import { Condition } from '../../database/kysely';
 
-export default async function(modelType: number, request: Request, id: string = null, link: string = null, defaultFields: string[] = null, whereQuery: WhereQuery = null) {
+export default async function(modelType: number, request: Request, id: string = null, link: string = null, defaultFields: string[] = null, conditions: Condition[] = null) {
 	if (link) throw new ErrorNotFound(); // Default action doesn't support links at all for now
 
 	const ModelClass = BaseItem.getClassByItemType(modelType);
@@ -25,7 +25,7 @@ export default async function(modelType: number, request: Request, id: string = 
 				fields: requestFields(request, modelType, defaultFields),
 			});
 		} else {
-			return paginatedResults(modelType, request, whereQuery, defaultFields);
+			return paginatedResults(modelType, request, conditions, defaultFields);
 		}
 	}
 

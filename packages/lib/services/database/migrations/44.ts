@@ -1,8 +1,12 @@
-import { SqlQuery } from '../types';
+import { Migration } from '../types';
+import { qb } from '../kysely';
+import { addColumn, column } from '../schema';
 
-export default (): (SqlQuery|string)[] => {
+const migration: Migration = () => {
 	return [
-		'ALTER TABLE `resources` ADD COLUMN blob_updated_time INT NOT NULL DEFAULT 0',
-		'UPDATE `resources` SET blob_updated_time = updated_time',
+		addColumn('resources', 'blob_updated_time', column.integer(0)),
+		qb.updateTable('resources').set(eb => ({ blob_updated_time: eb.ref('updated_time') })),
 	];
 };
+
+export default migration;

@@ -2,6 +2,7 @@ import Logger from '@joplin/utils/Logger';
 import time from './time';
 import shim from './shim';
 import { SqlParams, SqlQuery, StringOrSqlQuery } from './services/database/types';
+import { ColumnDefinition, compileQuery, dynamicQb, isQuery, keepUndefinedValues, Query, QueryOrSql, sql, toSqlQuery } from './services/database/kysely';
 
 import { Mutex } from 'async-mutex';
 
@@ -75,56 +76,8 @@ export default class Database {
 		}
 	}
 
-	public escapeField(field: string) {
-		if (field === '*') return '*';
-		const p = field.split('.');
-		if (p.length === 1) return `\`${field}\``;
-		if (p.length === 2) return `${p[0]}.\`${p[1]}\``;
-
-		throw new Error(`Invalid field format: ${field}`);
-	}
-
-	public escapeFields(fields: string[] | string): string[] | string {
-		if (fields === '*') return '*';
-
-		const output = [];
-		for (let i = 0; i < fields.length; i++) {
-			output.push(this.escapeField(fields[i]));
-		}
-		return output;
-	}
-
-	public escapeValues(values: string[]) {
-		return values.map(value => {
-			// See https://www.sqlite.org/printf.html#percentq
-			return `'${value.replace(/[']/g, '\'\'')}'`;
-		});
-	}
-
-	public escapeFieldsToString(fields: string[] | string): string {
-		if (typeof fields === 'string') {
-			if (fields === '*') return '*';
-			throw new Error(`Invalid field value (only "*" is supported): ${fields}`);
-		}
-
-		const output = [];
-		for (let i = 0; i < fields.length; i++) {
-			output.push(this.escapeField(fields[i]));
-		}
-		return output.join(',');
-	}
-
-	public async tryCall(callName: string, inputSql: StringOrSqlQuery, inputParams: SqlParams) {
-		let sql: string = null;
-		let params: SqlParams = null;
-
-		if (typeof inputSql === 'object') {
-			params = (inputSql as SqlQuery).params;
-			sql = (inputSql as SqlQuery).sql;
-		} else {
-			params = inputParams;
-			sql = inputSql as string;
-		}
+	public async tryCall(callName: string, inputSql: QueryOrSql, inputParams: SqlParams) {
+		const { sql, params } = toSqlQuery(inputSql, inputParams);
 
 		let waitTime = 50;
 		let totalWaitTime = 0;
@@ -174,7 +127,7 @@ export default class Database {
 		}
 	}
 
-	public async selectOne(sql: string, params: SqlParams = null): Promise<Row> {
+	public async selectOne<T = Row>(sql: string | Query<T>, params: SqlParams = null): Promise<T> {
 		return this.tryCall('selectOne', sql, params);
 	}
 
@@ -187,27 +140,28 @@ export default class Database {
 		}
 	}
 
-	public async selectAll<T = Row>(sql: string, params: SqlParams = null): Promise<T[]> {
+	public async selectAll<T = Row>(sql: string | Query<T>, params: SqlParams = null): Promise<T[]> {
 		return this.tryCall('selectAll', sql, params);
 	}
 
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field values are heterogeneous per query (string ids, numbers, booleans); callers across models narrow at use-site
-	public async selectAllFields(sql: string, params: SqlParams, field: string): Promise<any[]> {
-		const rows = await this.tryCall('selectAll', sql, params);
+	public async selectAllFields(inputSql: string | Query, params: SqlParams, field: string): Promise<any[]> {
+		const query = toSqlQuery(inputSql, params);
+		const rows = await this.tryCall('selectAll', query, null);
 		const output = [];
 		for (let i = 0; i < rows.length; i++) {
 			const v = rows[i][field];
-			if (!v) throw new Error(`No such field: ${field}. Query was: ${sql}`);
+			if (!v) throw new Error(`No such field: ${field}. Query was: ${query.sql}`);
 			output.push(rows[i][field]);
 		}
 		return output;
 	}
 
-	public async exec(sql: StringOrSqlQuery, params: SqlParams = null) {
+	public async exec(sql: StringOrSqlQuery | Query, params: SqlParams = null) {
 		return this.tryCall('exec', sql, params);
 	}
 
-	public async transactionExecBatch(queries: StringOrSqlQuery[]) {
+	public async transactionExecBatch(queries: (StringOrSqlQuery | Query)[]) {
 		if (queries.length <= 0) return;
 
 		if (queries.length === 1) {
@@ -220,16 +174,16 @@ export default class Database {
 		const release = await this.batchTransactionMutex_.acquire();
 
 		try {
-			await this.exec('BEGIN TRANSACTION');
+			await this.exec(sql`BEGIN TRANSACTION`);
 
 			for (let i = 0; i < queries.length; i++) {
 				const query = this.wrapQuery(queries[i]);
 				await this.exec(query.sql, query.params);
 			}
 
-			await this.exec('COMMIT');
+			await this.exec(sql`COMMIT`);
 		} catch (error) {
-			await this.exec('ROLLBACK');
+			await this.exec(sql`ROLLBACK`);
 			throw error;
 		} finally {
 			release();
@@ -291,89 +245,69 @@ export default class Database {
 		if (params !== null && params.length) this.logger().debug(JSON.stringify(params));
 	}
 
+	// Keys ending with "_" are not database fields.
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- data is an arbitrary entity slice (e.g. NoteEntity, FolderEntity); narrowing forces index-signature errors at call sites
+	private static queryValues(data: Record<string, any>) {
+		const output: Record<string, unknown> = {};
+		for (const key in data) {
+			if (!data.hasOwnProperty(key)) continue;
+			if (key[key.length - 1] === '_') continue;
+			output[key] = data[key];
+		}
+		return keepUndefinedValues(output);
+	}
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- See queryValues above
 	public static insertQuery(tableName: string, data: Record<string, any>) {
 		if (!data || !Object.keys(data).length) throw new Error('Data is empty');
 
-		let keySql = '';
-		let valueSql = '';
-		const params = [];
-		for (const key in data) {
-			if (!data.hasOwnProperty(key)) continue;
-			if (key[key.length - 1] === '_') continue;
-			if (keySql !== '') keySql += ', ';
-			if (valueSql !== '') valueSql += ', ';
-			keySql += `\`${key}\``;
-			valueSql += '?';
-			params.push(data[key]);
-		}
-		return {
-			sql: `INSERT INTO \`${tableName}\` (${keySql}) VALUES (${valueSql})`,
-			params: params,
-		};
+		return compileQuery(dynamicQb.insertInto(tableName).values(this.queryValues(data)));
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- See insertQuery above
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- See queryValues above
 	public static updateQuery(tableName: string, data: Record<string, any>, where: string | Record<string, any>) {
 		if (!data || !Object.keys(data).length) throw new Error('Data is empty');
 
-		let sql = '';
-		const params = [];
-		for (const key in data) {
-			if (!data.hasOwnProperty(key)) continue;
-			if (key[key.length - 1] === '_') continue;
-			if (sql !== '') sql += ', ';
-			sql += `\`${key}\`=?`;
-			params.push(data[key]);
-		}
+		let query = dynamicQb.updateTable(tableName).set(this.queryValues(data));
 
-		if (typeof where !== 'string') {
-			const s = [];
+		if (typeof where === 'string') {
+			query = query.where(sql<boolean>`${sql.raw(where)}`);
+		} else {
 			for (const n in where) {
 				if (!where.hasOwnProperty(n)) continue;
-				params.push(where[n]);
-				s.push(`\`${n}\`=?`);
+				query = query.where(n, '=', where[n]);
 			}
-			where = s.join(' AND ');
 		}
 
-		return {
-			sql: `UPDATE \`${tableName}\` SET ${sql} WHERE ${where}`,
-			params: params,
+		return compileQuery(query);
+	}
+
+	// Recreates the table with the given column definitions, keeping its content.
+	public alterColumnQueries(tableName: string, fields: Record<string, ColumnDefinition>) {
+		const backupTableName = `${tableName}_backup`;
+		const fieldNames = Object.keys(fields);
+
+		const createTable = (name: string, temporary: boolean) => {
+			let query = dynamicQb.schema.createTable(name);
+			if (temporary) query = query.temporary();
+			for (const n of fieldNames) {
+				const [type, build] = fields[n];
+				query = query.addColumn(n, type, build ? build : c => c);
+			}
+			return query;
 		};
+
+		return [
+			createTable(backupTableName, true),
+			dynamicQb.insertInto(backupTableName).expression(dynamicQb.selectFrom(tableName).select(fieldNames)),
+			dynamicQb.schema.dropTable(tableName),
+			createTable(tableName, false),
+			dynamicQb.insertInto(tableName).expression(dynamicQb.selectFrom(backupTableName).select(fieldNames)),
+			dynamicQb.schema.dropTable(backupTableName),
+		].map(q => compileQuery(q));
 	}
 
-	public alterColumnQueries(tableName: string, fields: Record<string, string>) {
-		const fieldsNoType = [];
-		for (const n in fields) {
-			if (!fields.hasOwnProperty(n)) continue;
-			fieldsNoType.push(n);
-		}
-
-		const fieldsWithType = [];
-		for (const n in fields) {
-			if (!fields.hasOwnProperty(n)) continue;
-			fieldsWithType.push(`${this.escapeField(n)} ${fields[n]}`);
-		}
-
-		let sql = `
-			CREATE TEMPORARY TABLE _BACKUP_TABLE_NAME_(_FIELDS_TYPE_);
-			INSERT INTO _BACKUP_TABLE_NAME_ SELECT _FIELDS_NO_TYPE_ FROM _TABLE_NAME_;
-			DROP TABLE _TABLE_NAME_;
-			CREATE TABLE _TABLE_NAME_(_FIELDS_TYPE_);
-			INSERT INTO _TABLE_NAME_ SELECT _FIELDS_NO_TYPE_ FROM _BACKUP_TABLE_NAME_;
-			DROP TABLE _BACKUP_TABLE_NAME_;
-		`;
-
-		sql = sql.replace(/_BACKUP_TABLE_NAME_/g, this.escapeField(`${tableName}_backup`));
-		sql = sql.replace(/_TABLE_NAME_/g, this.escapeField(tableName));
-		sql = sql.replace(/_FIELDS_NO_TYPE_/g, (this.escapeFields(fieldsNoType) as string[]).join(','));
-		sql = sql.replace(/_FIELDS_TYPE_/g, fieldsWithType.join(','));
-
-		return sql.trim().split('\n');
-	}
-
-	public wrapQueries(queries: (string | SqlQuery | [string, SqlParams?])[]) {
+	public wrapQueries(queries: (string | SqlQuery | Query | [string, SqlParams?])[]) {
 		const output = [];
 		for (let i = 0; i < queries.length; i++) {
 			output.push(this.wrapQuery(queries[i]));
@@ -381,7 +315,7 @@ export default class Database {
 		return output;
 	}
 
-	public wrapQuery(sql: string | SqlQuery | [string, SqlParams?], params: SqlParams = null): SqlQuery {
+	public wrapQuery(sql: string | SqlQuery | Query | [string, SqlParams?], params: SqlParams = null): SqlQuery {
 		if (!sql) throw new Error(`Cannot wrap empty string: ${sql}`);
 
 		if (Array.isArray(sql)) {
@@ -391,6 +325,8 @@ export default class Database {
 			};
 		} else if (typeof sql === 'string') {
 			return { sql: sql, params: params };
+		} else if (isQuery(sql)) {
+			return compileQuery(sql);
 		} else {
 			return sql; // Already wrapped
 		}

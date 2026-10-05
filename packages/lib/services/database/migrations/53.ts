@@ -1,4 +1,6 @@
-import { SqlQuery } from '../types';
+import { Migration } from '../types';
+import { qb } from '../kysely';
+import { column, createTable } from '../schema';
 
 // Recreate conflict_note_states with a numeric auto-increment primary key, to
 // match the convention used by the other tables. note_id keeps its uniqueness
@@ -6,17 +8,19 @@ import { SqlQuery } from '../types';
 // shipped in a release yet, so it is safe to drop and recreate it rather than
 // migrate the rows
 
-export default (): (SqlQuery|string)[] => {
+const migration: Migration = () => {
 	return [
-		'DROP TABLE IF EXISTS conflict_note_states',
-		`CREATE TABLE conflict_note_states (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			note_id TEXT NOT NULL UNIQUE,
-			base_body TEXT NOT NULL DEFAULT "",
-			base_title TEXT NOT NULL DEFAULT "",
-			remote_body TEXT NOT NULL DEFAULT "",
-			remote_title TEXT NOT NULL DEFAULT "",
-			remote_updated_time INT NOT NULL DEFAULT 0
-		)`,
+		qb.schema.dropTable('conflict_note_states').ifExists(),
+		createTable('conflict_note_states', {
+			id: column.autoIncrementPrimaryKey(),
+			note_id: ['text', c => c.notNull().unique()],
+			base_body: column.text(''),
+			base_title: column.text(''),
+			remote_body: column.text(''),
+			remote_title: column.text(''),
+			remote_updated_time: column.integer(0),
+		}),
 	];
 };
+
+export default migration;

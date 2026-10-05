@@ -1,7 +1,10 @@
-import { SqlQuery } from '../types';
+import { Migration } from '../types';
+import { addColumn, column } from '../schema';
 
-export default (): (SqlQuery|string)[] => {
+const migration: Migration = () => {
 	return [
-		'ALTER TABLE sync_items ADD COLUMN sync_warning_ignored INT NOT NULL DEFAULT "0"',
+		addColumn('sync_items', 'sync_warning_ignored', column.integer(0)),
 	];
 };
+
+export default migration;

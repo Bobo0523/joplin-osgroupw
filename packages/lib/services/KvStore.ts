@@ -2,6 +2,7 @@ import { MutexInterface } from 'async-mutex';
 import JoplinDatabase from '../JoplinDatabase';
 import BaseService from './BaseService';
 import { Mutex } from 'async-mutex';
+import { dynamicQb, keepUndefinedValues, qb } from './database/kysely';
 
 enum ValueType {
 	Int = 1,
@@ -68,30 +69,30 @@ export default class KvStore extends BaseService {
 	}
 
 	public async value(key: string): Promise<string | number | null> {
-		const r = await this.db().selectOne('SELECT `value`, `type` FROM key_values WHERE `key` = ?', [key]);
+		const r = await this.db().selectOne(qb.selectFrom('key_values').select(['value', 'type']).where('key', '=', key));
 		if (!r) return null;
 		return this.formatValue_(r.value, r.type);
 	}
 
 	public async setValue(key: string, value: string | number) {
 		const t = Date.now();
-		await this.db().exec('INSERT OR REPLACE INTO key_values (`key`, `value`, `type`, `updated_time`) VALUES (?, ?, ?, ?)', [key, value, this.typeFromValue_(value), t]);
+		await this.db().exec(dynamicQb.insertInto('key_values').orReplace().values(keepUndefinedValues({ key, value, type: this.typeFromValue_(value), updated_time: t })));
 	}
 
 	public async deleteValue(key: string) {
-		await this.db().exec('DELETE FROM key_values WHERE `key` = ?', [key]);
+		await this.db().exec(qb.deleteFrom('key_values').where('key', '=', key));
 	}
 
 	public async deleteByPrefix(prefix: string) {
-		await this.db().exec('DELETE FROM key_values WHERE `key` LIKE ?', [`${prefix}%`]);
+		await this.db().exec(qb.deleteFrom('key_values').where('key', 'like', `${prefix}%`));
 	}
 
 	public async clear() {
-		await this.db().exec('DELETE FROM key_values');
+		await this.db().exec(qb.deleteFrom('key_values'));
 	}
 
 	public async all() {
-		return this.formatValues_(await this.db().selectAll('SELECT * FROM key_values') as unknown as KvStoreKeyValue[]);
+		return this.formatValues_(await this.db().selectAll(qb.selectFrom('key_values').selectAll()) as unknown as KvStoreKeyValue[]);
 	}
 
 	// Note: atomicity is done at application level so two difference instances
@@ -100,7 +101,7 @@ export default class KvStore extends BaseService {
 		const release = await this.incMutex_.acquire();
 
 		try {
-			const result = await this.db().selectOne('SELECT `value`, `type` FROM key_values WHERE `key` = ?', [key]);
+			const result = await this.db().selectOne(qb.selectFrom('key_values').select(['value', 'type']).where('key', '=', key));
 			const newValue = result ? (this.formatValue_(result.value, result.type) as ValueType.Int) + inc : inc;
 			await this.setValue(key, newValue);
 			release();
@@ -112,12 +113,12 @@ export default class KvStore extends BaseService {
 	}
 
 	public async searchByPrefix(prefix: string): Promise<KvStoreKeyValue[]> {
-		const results = await this.db().selectAll('SELECT `key`, `value`, `type` FROM key_values WHERE `key` LIKE ?', [`${prefix}%`]);
+		const results = await this.db().selectAll(qb.selectFrom('key_values').select(['key', 'value', 'type']).where('key', 'like', `${prefix}%`));
 		return this.formatValues_(results as unknown as KvStoreKeyValue[]);
 	}
 
 	public async countKeys() {
-		const r = await this.db().selectOne('SELECT count(*) as total FROM key_values');
+		const r = await this.db().selectOne(qb.selectFrom('key_values').select(eb => eb.fn.countAll<number>().as('total')));
 		return r.total ? r.total : 0;
 	}
 }

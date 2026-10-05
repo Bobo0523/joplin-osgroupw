@@ -31,6 +31,7 @@ import { NoteEntity, ResourceEntity } from '../../database/types';
 import { DownloadController } from '../../../downloadController';
 import { FetchBlobOptions } from '../../../types';
 import RevisionService from '../../RevisionService';
+import { conditionBuilder } from '../../database/kysely';
 
 const logger = Logger.create('routes/notes');
 
@@ -482,10 +483,11 @@ export default async function(request: Request, id: string = null, link: string 
 			throw new ErrorNotFound();
 		}
 
-		const sql: string[] = [];
-		if (request.query.include_deleted !== '1') sql.push('deleted_time = 0');
-		if (request.query.include_conflicts !== '1') sql.push('is_conflict = 0');
-		return defaultAction(BaseModel.TYPE_NOTE, request, id, link, null, { sql: sql.join(' AND ') });
+		const eb = conditionBuilder<'notes'>();
+		const conditions = [];
+		if (request.query.include_deleted !== '1') conditions.push(eb('deleted_time', '=', 0));
+		if (request.query.include_conflicts !== '1') conditions.push(eb('is_conflict', '=', 0));
+		return defaultAction(BaseModel.TYPE_NOTE, request, id, link, null, conditions);
 	}
 
 	if (request.method === RequestMethod.POST) {

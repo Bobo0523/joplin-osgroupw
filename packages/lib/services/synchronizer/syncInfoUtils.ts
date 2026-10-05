@@ -11,6 +11,7 @@ import { _ } from '../../locale';
 import JoplinError from '../../JoplinError';
 import { ErrorCode } from '../../errors';
 import fastDeepEqual = require('fast-deep-equal');
+import { qb } from '../database/kysely';
 
 const logger = Logger.create('syncInfoUtils');
 
@@ -72,7 +73,7 @@ export async function migrateLocalSyncInfo(db: JoplinDatabase) {
 	// TODO: if the sync info is changed, there should be steps to migrate from
 	// v3 to v4, v4 to v5, etc.
 
-	const masterKeys: MasterKeyEntity[] = await db.selectAll('SELECT * FROM master_keys');
+	const masterKeys: MasterKeyEntity[] = await db.selectAll(qb.selectFrom('master_keys').selectAll());
 
 	const masterKeyMap: Record<string, MasterKeyEntity> = {};
 	for (const mk of masterKeys) masterKeyMap[mk.id] = mk;

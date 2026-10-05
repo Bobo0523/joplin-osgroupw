@@ -1,7 +1,9 @@
 const baseConfig = require('../../jest.config.base.js');
+const esmModulesConfig = require('../../jest.esmModules.js');
 
 module.exports = {
 	...baseConfig,
+	...esmModulesConfig(),
 
 	testMatch: [
 		'**/*.test.js',

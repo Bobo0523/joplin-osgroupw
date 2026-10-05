@@ -1,6 +1,7 @@
 import SearchEngine from './SearchEngine';
 import Note, { PreviewsOptions } from '../../models/Note';
 import Setting from '../../models/Setting';
+import { conditionBuilder, literalList } from '../database/kysely';
 
 export interface NotesForQueryOptions {
 	fields?: string[];
@@ -56,7 +57,7 @@ export default class SearchEngineUtils {
 
 		const previewOptions: PreviewsOptions = { order: [],
 			fields: fields,
-			conditions: [`id IN (${Note.escapeIdsForSql(noteIds)})`],
+			conditions: [conditionBuilder<'notes'>()('id', 'in', literalList(noteIds))],
 			...options };
 
 		const notes = await Note.previews(null, previewOptions);

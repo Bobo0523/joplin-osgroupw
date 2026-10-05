@@ -1,17 +1,20 @@
-import { SqlQuery } from '../types';
+import { Migration } from '../types';
+import { addColumn, column, createTable } from '../schema';
 
-export default (): (SqlQuery|string)[] => {
+const migration: Migration = () => {
 	return [
-		'ALTER TABLE sync_items ADD COLUMN base_body TEXT NOT NULL DEFAULT ""',
-		'ALTER TABLE sync_items ADD COLUMN base_title TEXT NOT NULL DEFAULT ""',
-		'ALTER TABLE sync_items ADD COLUMN base_conflict_note_id TEXT NOT NULL DEFAULT ""',
-		`CREATE TABLE IF NOT EXISTS conflict_note_states (
-			note_id TEXT PRIMARY KEY,
-			base_body TEXT NOT NULL DEFAULT "",
-			base_title TEXT NOT NULL DEFAULT "",
-			remote_body TEXT NOT NULL DEFAULT "",
-			remote_title TEXT NOT NULL DEFAULT "",
-			remote_updated_time INT NOT NULL DEFAULT 0
-		)`,
+		addColumn('sync_items', 'base_body', column.text('')),
+		addColumn('sync_items', 'base_title', column.text('')),
+		addColumn('sync_items', 'base_conflict_note_id', column.text('')),
+		createTable('conflict_note_states', {
+			note_id: column.textPrimaryKey(),
+			base_body: column.text(''),
+			base_title: column.text(''),
+			remote_body: column.text(''),
+			remote_title: column.text(''),
+			remote_updated_time: column.integer(0),
+		}, { ifNotExists: true }),
 	];
 };
+
+export default migration;

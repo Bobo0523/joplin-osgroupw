@@ -1,6 +1,9 @@
 /* eslint-disable id-denylist */
 
+import { Expression, QueryCreator, SelectQueryBuilder, SqlBool } from 'kysely';
 import time from '../../time';
+import { dynamicConditionBuilder, DynamicSchema, dynamicQb, sql } from '../database/kysely';
+import { Row } from '../../database';
 
 interface Term {
 	name: string;
@@ -23,57 +26,74 @@ enum Requirement {
 	INCLUSION = 'INCLUSION',
 }
 
-const _notebookFilter = (notebooks: string[], requirement: Requirement, conditions: string[], params: string[], withs: string[], useFts: boolean) => {
-	if (notebooks.length === 0) return;
+type SelectQuery = SelectQueryBuilder<DynamicSchema, string, Row>;
 
-	const likes = [];
-	for (let i = 0; i < notebooks.length; i++) {
-		likes.push('folders.title LIKE ?');
-	}
+interface Condition {
+	relation: Relation;
+	expression: Expression<SqlBool>;
+}
 
-	const relevantFolders = likes.join(' OR ');
+interface CommonTableExpression {
+	name: string;
+	query: SelectQuery;
+}
 
-	const viewName = requirement === Requirement.EXCLUSION ? 'notebooks_not_in_scope' : 'notebooks_in_scope';
-	const withInNotebook = `
-	${viewName}(id)
-	AS (
-		SELECT folders.id
-		FROM folders
-		WHERE id
-		IN (
-			SELECT id
-			FROM folders
-			WHERE ${relevantFolders}
-		)
-		UNION ALL
-		SELECT folders.id
-		FROM folders
-		JOIN ${viewName}
-		ON folders.parent_id=${viewName}.id
-	)`;
+const eb = dynamicConditionBuilder();
 
-	const tableName = useFts ? 'notes_normalized' : 'notes';
-	const where = `
-	AND ROWID ${requirement === Requirement.EXCLUSION ? 'NOT' : ''} IN (
-		SELECT ${tableName}.ROWID
-		FROM ${viewName}
-		JOIN ${tableName}
-		ON ${viewName}.id=${tableName}.parent_id
-	)`;
-
-
-	withs.push(withInNotebook);
-	params.push(...notebooks);
-	conditions.push(where);
-
+const rowIdIn = (query: SelectQuery, negated = false) => {
+	return eb('rowid', negated ? 'not in' : 'in', query);
 };
 
-const notebookFilter = (terms: Term[], conditions: string[], params: string[], withs: string[], useFts: boolean) => {
+const ftsMatch = (target: Expression<unknown>, value: string) => {
+	return sql<SqlBool>`${target} MATCH ${value}`;
+};
+
+// The conditions used to be concatenated in a single SQL string, with each of
+// them prefixed by AND or OR. Since AND has precedence over OR in SQL, this
+// groups the conditions in the same way.
+const combineConditions = (first: Expression<SqlBool>, conditions: Condition[]) => {
+	const groups: Expression<SqlBool>[][] = [[first]];
+	for (const condition of conditions) {
+		if (condition.relation === Relation.OR) {
+			groups.push([condition.expression]);
+		} else {
+			groups[groups.length - 1].push(condition.expression);
+		}
+	}
+	return eb.or(groups.map(group => eb.and(group)));
+};
+
+const _notebookFilter = (notebooks: string[], requirement: Requirement, conditions: Condition[], withs: CommonTableExpression[], useFts: boolean) => {
+	if (notebooks.length === 0) return;
+
+	const relevantFolders = dynamicQb.selectFrom('folders')
+		.select('id')
+		.where(eb.or(notebooks.map(notebook => eb('folders.title', 'like', notebook))));
+
+	const viewName: string = requirement === Requirement.EXCLUSION ? 'notebooks_not_in_scope' : 'notebooks_in_scope';
+	const withInNotebook = dynamicQb.selectFrom('folders')
+		.select('folders.id')
+		.where('id', 'in', relevantFolders)
+		.unionAll(dynamicQb
+			.selectFrom('folders')
+			.innerJoin(viewName, 'folders.parent_id', `${viewName}.id`)
+			.select('folders.id'));
+
+	const tableName: string = useFts ? 'notes_normalized' : 'notes';
+	const notesInScope = dynamicQb.selectFrom(viewName)
+		.innerJoin(tableName, `${viewName}.id`, `${tableName}.parent_id`)
+		.select(`${tableName}.rowid`);
+
+	withs.push({ name: `${viewName}(id)`, query: withInNotebook });
+	conditions.push({ relation: Relation.AND, expression: rowIdIn(notesInScope, requirement === Requirement.EXCLUSION) });
+};
+
+const notebookFilter = (terms: Term[], conditions: Condition[], withs: CommonTableExpression[], useFts: boolean) => {
 	const notebooksToInclude = terms.filter(x => x.name === 'notebook' && !x.negated).map(x => x.value);
-	_notebookFilter(notebooksToInclude, Requirement.INCLUSION, conditions, params, withs, useFts);
+	_notebookFilter(notebooksToInclude, Requirement.INCLUSION, conditions, withs, useFts);
 
 	const notebooksToExclude = terms.filter(x => x.name === 'notebook' && x.negated).map(x => x.value);
-	_notebookFilter(notebooksToExclude, Requirement.EXCLUSION, conditions, params, withs, useFts);
+	_notebookFilter(notebooksToExclude, Requirement.EXCLUSION, conditions, withs, useFts);
 };
 
 
@@ -84,12 +104,11 @@ const getOperator = (requirement: Requirement, relation: Relation): Operation =>
 
 const filterByTableName = (
 	terms: Term[],
-	conditions: string[],
-	params: string[],
+	conditions: Condition[],
 	relation: Relation,
-	noteIDs: string,
+	noteIDs: (value: string)=> SelectQuery,
 	requirement: Requirement,
-	withs: string[],
+	withs: CommonTableExpression[],
 	tableName: string,
 	useFts: boolean,
 ) => {
@@ -97,126 +116,86 @@ const filterByTableName = (
 
 	const values = terms.map(x => x.value);
 
-	let withCondition = null;
+	const noteTableName = `note_${tableName}`;
+	let withCondition: SelectQuery = null;
 
 	if (relation === Relation.OR && requirement === Requirement.EXCLUSION) {
 		// with_${requirement}_${tableName} is added to the names to make them unique
-		withs.push(`
-		all_notes_with_${requirement}_${tableName}    
-		AS (
-			SELECT DISTINCT note_${tableName}.note_id AS id FROM note_${tableName}
-		)`);
+		const allNotesName = `all_notes_with_${requirement}_${tableName}`;
+		withs.push({
+			name: allNotesName,
+			query: dynamicQb.selectFrom(noteTableName).select(`${noteTableName}.note_id as id`).distinct(),
+		});
 
-		const notesWithoutExcludedField = `
-		SELECT * FROM (
-			SELECT *
-			FROM all_notes_with_${requirement}_${tableName}
-			EXCEPT ${noteIDs}
-		)`;
-
-		const requiredNotes = [];
-		for (let i = 0; i < values.length; i++) {
-			requiredNotes.push(notesWithoutExcludedField);
-		}
-		const requiredNotesQuery = requiredNotes.join(' UNION ');
+		const notesWithoutExcludedField = (value: string) => dynamicQb
+			.selectFrom(dynamicQb.selectFrom(allNotesName).selectAll().except(noteIDs(value)).as('notes_without_excluded_field'))
+			.selectAll();
 
 		// We need notes without at least one excluded (tag/resource)
-		withCondition = `
-		notes_with_${requirement}_${tableName}
-		AS (
-			${requiredNotesQuery}
-		)`;
-
+		withCondition = values.map(notesWithoutExcludedField).reduce((query, current) => query.union(current));
 	} else {
-		const requiredNotes = [];
-		for (let i = 0; i < values.length; i++) {
-			requiredNotes.push(noteIDs);
-		}
-		const requiredNotesQuery = requiredNotes.join(` ${operator} `);
-
-
 		// Notes with any/all values depending upon relation and requirement
-		withCondition = `
-		notes_with_${requirement}_${tableName}
-		AS (
-			SELECT note_${tableName}.note_id as id
-			FROM note_${tableName}
-			WHERE
-			${operator === 'INTERSECT' ? 1 : 0} ${operator}
-			${requiredNotesQuery}
-		)`;
+		withCondition = dynamicQb.selectFrom(noteTableName)
+			.select(`${noteTableName}.note_id as id`)
+			.where(sql<SqlBool>`${sql.lit(operator === Operation.INTERSECT ? 1 : 0)}`);
+
+		for (const value of values) {
+			withCondition = operator === Operation.INTERSECT ? withCondition.intersect(noteIDs(value)) : withCondition.union(noteIDs(value));
+		}
 	}
 
 	// Get the ROWIDs that satisfy the condition so we can filter the result
+	const cteName = `notes_with_${requirement}_${tableName}`;
 	const targetTableName = useFts ? 'notes_normalized' : 'notes';
-	const whereCondition = `
-	${relation} ROWID ${(relation === 'AND' && requirement === 'EXCLUSION') ? 'NOT' : ''}
-	IN (
-		SELECT ${targetTableName}.ROWID
-		FROM notes_with_${requirement}_${tableName}
-		JOIN ${targetTableName}
-		ON notes_with_${requirement}_${tableName}.id=${targetTableName}.id
-	)`;
+	const matchingRowIds = dynamicQb.selectFrom(cteName)
+		.innerJoin(targetTableName, `${cteName}.id`, `${targetTableName}.id`)
+		.select(`${targetTableName}.rowid`);
 
-	withs.push(withCondition);
-	params.push(...values);
-	conditions.push(whereCondition);
+	withs.push({ name: cteName, query: withCondition });
+	conditions.push({ relation, expression: rowIdIn(matchingRowIds, relation === Relation.AND && requirement === Requirement.EXCLUSION) });
 };
 
 
-const resourceFilter = (terms: Term[], conditions: string[], params: string[], relation: Relation, withs: string[], useFts: boolean) => {
+const resourceFilter = (terms: Term[], conditions: Condition[], relation: Relation, withs: CommonTableExpression[], useFts: boolean) => {
 	const tableName = 'resources';
 
-	const resourceIDs = `
-	SELECT resources.id
-	FROM resources
-	WHERE resources.mime LIKE ?`;
-
-	const noteIDsWithResource = `
-	SELECT note_resources.note_id AS id
-	FROM note_resources
-	WHERE note_resources.is_associated=1
-	AND note_resources.resource_id IN (${resourceIDs})`;
+	const noteIDsWithResource = (value: string) => dynamicQb.selectFrom('note_resources')
+		.select('note_resources.note_id as id')
+		.where('note_resources.is_associated', '=', sql.lit(1))
+		.where('note_resources.resource_id', 'in', dynamicQb.selectFrom('resources').select('resources.id').where('resources.mime', 'like', value));
 
 	const requiredResources = terms.filter(x => x.name === 'resource' && !x.negated);
 	const excludedResources = terms.filter(x => x.name === 'resource' && x.negated);
 
 	if (requiredResources.length > 0) {
-		filterByTableName(requiredResources, conditions, params, relation, noteIDsWithResource, Requirement.INCLUSION, withs, tableName, useFts);
+		filterByTableName(requiredResources, conditions, relation, noteIDsWithResource, Requirement.INCLUSION, withs, tableName, useFts);
 	}
 
 	if (excludedResources.length > 0) {
-		filterByTableName(excludedResources, conditions, params, relation, noteIDsWithResource, Requirement.EXCLUSION, withs, tableName, useFts);
+		filterByTableName(excludedResources, conditions, relation, noteIDsWithResource, Requirement.EXCLUSION, withs, tableName, useFts);
 	}
 };
 
-const tagFilter = (terms: Term[], conditions: string[], params: string[], relation: Relation, withs: string[], useFts: boolean) => {
+const tagFilter = (terms: Term[], conditions: Condition[], relation: Relation, withs: CommonTableExpression[], useFts: boolean) => {
 	const tableName = 'tags';
 
-	const tagIDs = `
-	SELECT tags.id
-	FROM tags
-	WHERE tags.title
-	LIKE ?`;
-
-	const noteIDsWithTag = `
-	SELECT note_tags.note_id AS id
-	FROM note_tags
-	WHERE note_tags.tag_id IN (${tagIDs})`;
+	const noteIDsWithTag = (value: string) => dynamicQb.selectFrom('note_tags')
+		.select('note_tags.note_id as id')
+		.where('note_tags.tag_id', 'in', dynamicQb.selectFrom('tags').select('tags.id').where('tags.title', 'like', value));
 
 	const requiredTags = terms.filter(x => x.name === 'tag' && !x.negated);
 	const excludedTags = terms.filter(x => x.name === 'tag' && x.negated);
 
 	if (requiredTags.length > 0) {
-		filterByTableName(requiredTags, conditions, params, relation, noteIDsWithTag, Requirement.INCLUSION, withs, tableName, useFts);
+		filterByTableName(requiredTags, conditions, relation, noteIDsWithTag, Requirement.INCLUSION, withs, tableName, useFts);
 	}
 
 	if (excludedTags.length > 0) {
-		filterByTableName(excludedTags, conditions, params, relation, noteIDsWithTag, Requirement.EXCLUSION, withs, tableName, useFts);
+		filterByTableName(excludedTags, conditions, relation, noteIDsWithTag, Requirement.EXCLUSION, withs, tableName, useFts);
 	}
 };
 
-const genericFilter = (terms: Term[], conditions: string[], params: string[], relation: Relation, fieldName: string, useFts: boolean) => {
+const genericFilter = (terms: Term[], conditions: Condition[], relation: Relation, fieldName: string, useFts: boolean) => {
 	if (fieldName === 'iscompleted' || fieldName === 'type') {
 		// Faster query when values can only take two distinct values
 		biConditionalFilter(terms, conditions, relation, fieldName, useFts);
@@ -227,35 +206,35 @@ const genericFilter = (terms: Term[], conditions: string[], params: string[], re
 
 	const getCondition = (term: Term) => {
 		if (fieldName === 'sourceurl') {
-			return `${tableName}.source_url ${term.negated ? 'NOT' : ''} LIKE ?`;
+			return eb(`${tableName}.source_url`, term.negated ? 'not like' : 'like', term.value);
 		} else if (fieldName === 'date' && term.name === 'due') {
-			return `todo_due ${term.negated ? '<' : '>='} ?`;
+			return eb('todo_due', term.negated ? '<' : '>=', term.value);
 		} else if (fieldName === 'id') {
-			return `id ${term.negated ? 'NOT' : ''} LIKE ?`;
+			return eb('id', term.negated ? 'not like' : 'like', term.value);
 		} else {
-			return `${tableName}.${fieldName === 'date' ? `user_${term.name}_time` : `${term.name}`} ${term.negated ? '<' : '>='} ?`;
+			return eb(`${tableName}.${fieldName === 'date' ? `user_${term.name}_time` : `${term.name}`}`, term.negated ? '<' : '>=', term.value);
 		}
 	};
 
-	// eslint-disable-next-line github/array-foreach -- Old code before rule was applied
-	terms.forEach(term => {
-		conditions.push(`
-		${relation} ( ${term.name === 'due' ? 'is_todo IS 1 AND ' : ''} ROWID IN (
-			SELECT ROWID
-			FROM ${tableName}
-			WHERE ${getCondition(term)}
-		))`);
-		params.push(term.value);
-	});
+	for (const term of terms) {
+		const matchingRowIds = rowIdIn(dynamicQb.selectFrom(tableName).select('rowid').where(getCondition(term)));
+		conditions.push({
+			relation,
+			expression: term.name === 'due' ? eb.and([eb('is_todo', 'is', sql.lit(1)), matchingRowIds]) : matchingRowIds,
+		});
+	}
 };
 
-const biConditionalFilter = (terms: Term[], conditions: string[], relation: Relation, filterName: string, useFts: boolean) => {
+const biConditionalFilter = (terms: Term[], conditions: Condition[], relation: Relation, filterName: string, useFts: boolean) => {
 	const getCondition = (filterName: string, value: string, relation: Relation) => {
 		const tableName = useFts ? (relation === 'AND' ? 'notes_fts' : 'notes_normalized') : 'notes';
 		if (filterName === 'type') {
-			return `${tableName}.is_todo IS ${value === 'todo' ? 1 : 0}`;
+			return eb(`${tableName}.is_todo`, 'is', sql.lit(value === 'todo' ? 1 : 0));
 		} else if (filterName === 'iscompleted') {
-			return `${tableName}.is_todo IS 1 AND ${tableName}.todo_completed IS ${value === '1' ? 'NOT 0' : '0'}`;
+			return eb.and([
+				eb(`${tableName}.is_todo`, 'is', sql.lit(1)),
+				eb(`${tableName}.todo_completed`, value === '1' ? 'is not' : 'is', sql.lit(0)),
+			]);
 		} else {
 			throw new Error('Invalid filter name.');
 		}
@@ -264,51 +243,46 @@ const biConditionalFilter = (terms: Term[], conditions: string[], relation: Rela
 	const values = terms.map(x => x.value);
 
 	// AND and OR are handled differently because FTS restricts how OR can be used.
-	// eslint-disable-next-line github/array-foreach -- Old code before rule was applied
-	values.forEach(value => {
+	for (const value of values) {
 		if (relation === 'AND') {
-			conditions.push(`
-			AND ${getCondition(filterName, value, relation)}`);
+			conditions.push({ relation: Relation.AND, expression: getCondition(filterName, value, relation) });
 		}
 		if (relation === 'OR') {
 			if (useFts) {
-				conditions.push(`
-				OR ROWID IN (
-					SELECT ROWID
-					FROM notes_normalized
-					WHERE ${getCondition(filterName, value, relation)}
-				)`);
+				conditions.push({
+					relation: Relation.OR,
+					expression: rowIdIn(dynamicQb.selectFrom('notes_normalized').select('rowid').where(getCondition(filterName, value, relation))),
+				});
 			} else {
-				conditions.push(`
-				OR ${getCondition(filterName, value, relation)}`);
+				conditions.push({ relation: Relation.OR, expression: getCondition(filterName, value, relation) });
 			}
 		}
-	});
+	}
 };
 
-const noteIdFilter = (terms: Term[], conditions: string[], params: string[], relation: Relation, useFts: boolean) => {
+const noteIdFilter = (terms: Term[], conditions: Condition[], relation: Relation, useFts: boolean) => {
 	const noteIdTerms = terms.filter(x => x.name === 'id');
-	genericFilter(noteIdTerms, conditions, params, relation, 'id', useFts);
+	genericFilter(noteIdTerms, conditions, relation, 'id', useFts);
 };
 
 
-const typeFilter = (terms: Term[], conditions: string[], params: string[], relation: Relation, useFts: boolean) => {
+const typeFilter = (terms: Term[], conditions: Condition[], relation: Relation, useFts: boolean) => {
 	const typeTerms = terms.filter(x => x.name === 'type');
-	genericFilter(typeTerms, conditions, params, relation, 'type', useFts);
+	genericFilter(typeTerms, conditions, relation, 'type', useFts);
 };
 
-const completedFilter = (terms: Term[], conditions: string[], params: string[], relation: Relation, useFts: boolean) => {
+const completedFilter = (terms: Term[], conditions: Condition[], relation: Relation, useFts: boolean) => {
 	const completedTerms = terms.filter(x => x.name === 'iscompleted');
-	genericFilter(completedTerms, conditions, params, relation, 'iscompleted', useFts);
+	genericFilter(completedTerms, conditions, relation, 'iscompleted', useFts);
 };
 
 
-const locationFilter = (terms: Term[], conditions: string[], params: string[], relation: Relation, useFts: boolean) => {
+const locationFilter = (terms: Term[], conditions: Condition[], relation: Relation, useFts: boolean) => {
 	const locationTerms = terms.filter(x => x.name === 'latitude' || x.name === 'longitude' || x.name === 'altitude');
-	genericFilter(locationTerms, conditions, params, relation, 'location', useFts);
+	genericFilter(locationTerms, conditions, relation, 'location', useFts);
 };
 
-const dateFilter = (terms: Term[], conditions: string[], params: string[], relation: Relation, useFts: boolean) => {
+const dateFilter = (terms: Term[], conditions: Condition[], relation: Relation, useFts: boolean) => {
 	const getUnixMs = (date: string): string => {
 		const yyyymmdd = /^[0-9]{8}$/;
 		const yyyymm = /^[0-9]{6}$/;
@@ -335,64 +309,45 @@ const dateFilter = (terms: Term[], conditions: string[], params: string[], relat
 
 	const dateTerms = terms.filter(x => x.name === 'created' || x.name === 'updated' || x.name === 'due');
 	const unixDateTerms = dateTerms.map(term => { return { ...term, value: getUnixMs(term.value) }; });
-	genericFilter(unixDateTerms, conditions, params, relation, 'date', useFts);
+	genericFilter(unixDateTerms, conditions, relation, 'date', useFts);
 };
 
-const sourceUrlFilter = (terms: Term[], conditions: string[], params: string[], relation: Relation, useFts: boolean) => {
+const sourceUrlFilter = (terms: Term[], conditions: Condition[], relation: Relation, useFts: boolean) => {
 	const urlTerms = terms.filter(x => x.name === 'sourceurl');
-	genericFilter(urlTerms, conditions, params, relation, 'sourceurl', useFts);
+	genericFilter(urlTerms, conditions, relation, 'sourceurl', useFts);
 };
 
 const trimQuotes = (str: string) => str.startsWith('"') && str.endsWith('"') ? str.substr(1, str.length - 2) : str;
 
-const textFilter = (terms: Term[], conditions: string[], params: string[], relation: Relation, useFts: boolean) => {
+const textFilter = (terms: Term[], conditions: Condition[], relation: Relation, useFts: boolean) => {
 	const createLikeMatch = (term: Term, negate: boolean) => {
-		const query = `${relation} ${negate ? 'NOT' : ''} (
-			${(term.name === 'text' || term.name === 'body') ? 'notes.body LIKE ? ' : ''}
-			${term.name === 'text' ? 'OR' : ''}
-			${(term.name === 'text' || term.name === 'title') ? 'notes.title LIKE ? ' : ''})`;
-
-		conditions.push(query);
 		const param = `%${trimQuotes(term.value).replace(/\*/, '%')}%`;
-		params.push(param);
-		if (term.name === 'text') params.push(param);
+		const likeConditions = [];
+		if (term.name === 'text' || term.name === 'body') likeConditions.push(eb('notes.body', 'like', param));
+		if (term.name === 'text' || term.name === 'title') likeConditions.push(eb('notes.title', 'like', param));
+		const expression = eb.or(likeConditions);
+		conditions.push({ relation, expression: negate ? eb.not(expression) : expression });
 	};
 
-	const addExcludeTextConditions = (excludedTerms: Term[], conditions: string[], params: string[], relation: Relation) => {
+	const addExcludeTextConditions = (excludedTerms: Term[], conditions: Condition[], relation: Relation) => {
 		if (useFts) {
-			const type = excludedTerms[0].name === 'text' ? '' : `.${excludedTerms[0].name}`;
+			const matchTarget = excludedTerms[0].name === 'text' ? sql.table('notes_fts') : sql.ref(`notes_fts.${excludedTerms[0].name}`);
+			const matchingRowIds = (value: string) => dynamicQb.selectFrom('notes_fts').select('rowid').where(ftsMatch(matchTarget, value));
 			if (relation === 'AND') {
-				conditions.push(`
-				AND ROWID NOT IN (
-					SELECT ROWID
-					FROM notes_fts
-					WHERE notes_fts${type} MATCH ?
-				)`);
-				params.push(excludedTerms.map(x => x.value).join(' OR '));
+				conditions.push({ relation: Relation.AND, expression: rowIdIn(matchingRowIds(excludedTerms.map(x => x.value).join(' OR ')), true) });
 			}
 			if (relation === 'OR') {
-				// eslint-disable-next-line github/array-foreach -- Old code before rule was applied
-				excludedTerms.forEach(term => {
-					conditions.push(`
-					OR ROWID IN (
-						SELECT *
-							FROM (
-								SELECT ROWID
-								FROM notes_fts
-								EXCEPT
-								SELECT ROWID
-								FROM notes_fts
-								WHERE notes_fts${type} MATCH ?
-						)
-					)`);
-					params.push(term.value);
-				});
+				for (const term of excludedTerms) {
+					const nonMatchingRowIds = dynamicQb
+						.selectFrom(dynamicQb.selectFrom('notes_fts').select('rowid').except(matchingRowIds(term.value)).as('non_matching_notes'))
+						.selectAll();
+					conditions.push({ relation: Relation.OR, expression: rowIdIn(nonMatchingRowIds) });
+				}
 			}
 		} else {
-			// eslint-disable-next-line github/array-foreach -- Old code before rule was applied
-			excludedTerms.forEach(term => {
+			for (const term of excludedTerms) {
 				createLikeMatch(term, true);
-			});
+			}
 		}
 	};
 
@@ -401,18 +356,16 @@ const textFilter = (terms: Term[], conditions: string[], params: string[], relat
 	const includedTerms = allTerms.filter(x => !x.negated);
 	if (includedTerms.length > 0) {
 		if (useFts) {
-			conditions.push(`${relation} notes_fts MATCH ?`);
 			const termsToMatch = includedTerms.map(term => {
 				if (term.name === 'text') return term.value;
 				else return `${term.name}:${term.value}`;
 			});
 			const matchQuery = (relation === 'OR') ? termsToMatch.join(' OR ') : termsToMatch.join(' ');
-			params.push(matchQuery);
+			conditions.push({ relation, expression: ftsMatch(sql.table('notes_fts'), matchQuery) });
 		} else {
-			// eslint-disable-next-line github/array-foreach -- Old code before rule was applied
-			includedTerms.forEach(term => {
+			for (const term of includedTerms) {
 				createLikeMatch(term, false);
-			});
+			}
 		}
 	}
 
@@ -421,15 +374,15 @@ const textFilter = (terms: Term[], conditions: string[], params: string[], relat
 	const excludedBodyTerms = allTerms.filter(x => x.name === 'body' && x.negated);
 
 	if ((excludedTextTerms.length > 0)) {
-		addExcludeTextConditions(excludedTextTerms, conditions, params, relation);
+		addExcludeTextConditions(excludedTextTerms, conditions, relation);
 	}
 
 	if (excludedTitleTerms.length > 0) {
-		addExcludeTextConditions(excludedTitleTerms, conditions, params, relation);
+		addExcludeTextConditions(excludedTitleTerms, conditions, relation);
 	}
 
 	if (excludedBodyTerms.length > 0) {
-		addExcludeTextConditions(excludedBodyTerms, conditions, params, relation);
+		addExcludeTextConditions(excludedBodyTerms, conditions, relation);
 	}
 };
 
@@ -439,68 +392,75 @@ const getDefaultRelation = (terms: Term[]): Relation => {
 	return Relation.AND;
 };
 
-const getConnective = (terms: Term[], relation: Relation): string => {
+const getConnective = (terms: Term[], relation: Relation): Expression<SqlBool> => {
 	const notebookTerm = terms.find(x => x.name === 'notebook');
-	return (!notebookTerm && (relation === 'OR')) ? 'ROWID=-1' : '1'; // ROWID=-1 acts as 0 (something always false)
+	// ROWID=-1 acts as 0 (something always false)
+	return (!notebookTerm && (relation === 'OR')) ? eb('rowid', '=', sql.lit(-1)) : sql<SqlBool>`${sql.lit(1)}`;
 };
 
 export default function queryBuilder(terms: Term[], useFts: boolean) {
-	const queryParts: string[] = [];
-	const params: string[] = [];
-	const withs: string[] = [];
+	const conditions: Condition[] = [];
+	const withs: CommonTableExpression[] = [];
 
 	const relation: Relation = getDefaultRelation(terms);
 
 	const tableName = useFts ? 'notes_fts' : 'notes';
 
-	queryParts.push(`
-	SELECT
-	${tableName}.id,
-	${tableName}.title,
-	${useFts ? 'offsets(notes_fts) AS offsets, matchinfo(notes_fts, \'pcnalx\') AS matchinfo,' : ''}
-	${tableName}.user_created_time,
-	${tableName}.user_updated_time,
-	${tableName}.is_todo,
-	${tableName}.todo_completed,
-	${tableName}.parent_id
-	FROM ${tableName}
-	WHERE ${getConnective(terms, relation)}`);
+	noteIdFilter(terms, conditions, relation, useFts);
 
-	noteIdFilter(terms, queryParts, params, relation, useFts);
+	notebookFilter(terms, conditions, withs, useFts);
 
-	notebookFilter(terms, queryParts, params, withs, useFts);
+	tagFilter(terms, conditions, relation, withs, useFts);
 
-	tagFilter(terms, queryParts, params, relation, withs, useFts);
+	resourceFilter(terms, conditions, relation, withs, useFts);
 
-	resourceFilter(terms, queryParts, params, relation, withs, useFts);
-
-	textFilter(terms, queryParts, params, relation, useFts);
+	textFilter(terms, conditions, relation, useFts);
 
 
-	typeFilter(terms, queryParts, params, relation, useFts);
+	typeFilter(terms, conditions, relation, useFts);
 
-	completedFilter(terms, queryParts, params, relation, useFts);
+	completedFilter(terms, conditions, relation, useFts);
 
-	dateFilter(terms, queryParts, params, relation, useFts);
+	dateFilter(terms, conditions, relation, useFts);
 
-	locationFilter(terms, queryParts, params, relation, useFts);
+	locationFilter(terms, conditions, relation, useFts);
 
-	sourceUrlFilter(terms, queryParts, params, relation, useFts);
+	sourceUrlFilter(terms, conditions, relation, useFts);
 
-	let query;
-	if (withs.length > 0) {
-		if (terms.find(x => x.name === 'notebook') && terms.find(x => x.name === 'any')) {
-			// The notebook filter should be independent of the any filter.
-			// So we're first finding the OR of other filters and then combining them with the notebook filter using AND
-			// in-required-notebook AND (condition #1 OR condition #2  OR ... )
-			const queryString = `${queryParts.slice(0, 2).join(' ')} AND ROWID IN ( SELECT ROWID FROM notes_fts WHERE 1=0 ${queryParts.slice(2).join(' ')})`;
-			query = ['WITH RECURSIVE', withs.join(','), queryString].join(' ');
-		} else {
-			query = ['WITH RECURSIVE', withs.join(','), queryParts.join(' ')].join(' ');
-		}
+	let where: Expression<SqlBool>;
+	if (withs.length > 0 && terms.find(x => x.name === 'notebook') && terms.find(x => x.name === 'any')) {
+		// The notebook filter should be independent of the any filter.
+		// So we're first finding the OR of other filters and then combining them with the notebook filter using AND
+		// in-required-notebook AND (condition #1 OR condition #2  OR ... )
+		const otherConditions = combineConditions(eb(sql.lit(1), '=', sql.lit(0)), conditions.slice(1));
+		where = combineConditions(getConnective(terms, relation), [
+			conditions[0],
+			{ relation: Relation.AND, expression: rowIdIn(dynamicQb.selectFrom('notes_fts').select('rowid').where(otherConditions)) },
+		]);
 	} else {
-		query = queryParts.join(' ');
+		where = combineConditions(getConnective(terms, relation), conditions);
 	}
 
-	return { query, params };
+	let queryCreator: QueryCreator<DynamicSchema> = dynamicQb;
+	for (const w of withs) {
+		queryCreator = queryCreator.withRecursive(w.name, () => w.query) as unknown as QueryCreator<DynamicSchema>;
+	}
+
+	const ftsFields = useFts ? [
+		eb.fn('offsets', [sql.table('notes_fts')]).as('offsets'),
+		eb.fn('matchinfo', [sql.table('notes_fts'), sql.lit('pcnalx')]).as('matchinfo'),
+	] : [];
+
+	return queryCreator.selectFrom(tableName)
+		.select([
+			`${tableName}.id`,
+			`${tableName}.title`,
+			...ftsFields,
+			`${tableName}.user_created_time`,
+			`${tableName}.user_updated_time`,
+			`${tableName}.is_todo`,
+			`${tableName}.todo_completed`,
+			`${tableName}.parent_id`,
+		])
+		.where(where);
 }

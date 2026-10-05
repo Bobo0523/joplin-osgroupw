@@ -25,9 +25,11 @@
 //    call that's causing problem.
 
 const baseConfig = require('../../jest.config.base.js');
+const esmModulesConfig = require('../../jest.esmModules.js');
 
 module.exports = {
 	...baseConfig,
+	...esmModulesConfig(),
 	testMatch: [
 		'**/tests/HtmlToHtml.js',
 		'**/tests/HtmlToMd.js',

@@ -1,4 +1,5 @@
 import { ModelType } from "../../BaseModel";
+import type { Query } from './kysely';
 
 export interface BaseItemEntity {
   id?: string;
@@ -26,7 +27,7 @@ export interface SqlQuery {
 
 export type StringOrSqlQuery = string | SqlQuery;
 
-export type Migration = () => (SqlQuery|string)[];
+export type Migration = ()=> (SqlQuery | Query)[];
 
 export enum FolderIconType {
   Emoji = 1,

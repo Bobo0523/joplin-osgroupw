@@ -1,4 +1,5 @@
 import { SqlQuery } from '../../services/database/types';
+import type { Condition, Query } from '../../services/database/kysely';
 import type { DecryptedNoteLockKey } from '../../services/noteLock/NoteLockKey';
 
 export enum PaginationOrderDir {
@@ -22,7 +23,9 @@ export interface Pagination {
 export interface LoadOptions {
 	caseInsensitive?: boolean;
 	fields?: string | string[];
-	where?: string;
+	// Legacy string conditions are still supported, with their parameters in
+	// whereParams, but new code should use Kysely expressions.
+	where?: string | Condition;
 	whereParams?: (string | number | boolean)[];
 	order?: {
 		by: string;
@@ -45,7 +48,7 @@ export interface SaveOptions {
 	oldItem?: Record<string, unknown>;
 	fields?: string[];
 	userSideValidation?: boolean;
-	nextQueries?: SqlQuery[];
+	nextQueries?: (SqlQuery | Query)[];
 	autoTimestamp?: boolean;
 	provisional?: boolean;
 	ignoreProvisionalFlag?: boolean;

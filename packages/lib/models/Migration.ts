@@ -1,4 +1,5 @@
 import BaseModel from '../BaseModel';
+import { qb } from '../services/database/kysely';
 import migration20 from '../migrations/20';
 import migration27 from '../migrations/27';
 import migration33 from '../migrations/33';
@@ -27,7 +28,7 @@ export default class Migration extends BaseModel {
 	}
 
 	public static migrationsToDo() {
-		return this.modelSelectAll('SELECT * FROM migrations ORDER BY number ASC');
+		return this.modelSelectAll(qb.selectFrom('migrations').selectAll().orderBy('number', 'asc'));
 	}
 
 	public static script(number: number) {

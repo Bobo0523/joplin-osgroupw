@@ -1,7 +1,10 @@
-import { SqlQuery } from '../types';
+import { Migration } from '../types';
+import { addColumn, column } from '../schema';
 
-export default (): (SqlQuery|string)[] => {
+const migration: Migration = () => {
 	return [
-		'ALTER TABLE sync_items ADD COLUMN remote_item_updated_time INT NOT NULL DEFAULT 0',
+		addColumn('sync_items', 'remote_item_updated_time', column.integer(0)),
 	];
 };
+
+export default migration;

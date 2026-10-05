@@ -1510,6 +1510,7 @@ packages/lib/models/settings/builtInMetadata.js
 packages/lib/models/settings/settingValidations.test.js
 packages/lib/models/settings/settingValidations.js
 packages/lib/models/settings/types.js
+packages/lib/models/utils/applyPaginationOrder.js
 packages/lib/models/utils/areAllFoldersCollapsed.test.js
 packages/lib/models/utils/areAllFoldersCollapsed.js
 packages/lib/models/utils/getCanBeCollapsedFolderIds.test.js
@@ -1522,7 +1523,6 @@ packages/lib/models/utils/itemCanBeEncrypted.js
 packages/lib/models/utils/onFolderDrop.test.js
 packages/lib/models/utils/onFolderDrop.js
 packages/lib/models/utils/paginatedFeed.js
-packages/lib/models/utils/paginationToSql.js
 packages/lib/models/utils/readOnly.test.js
 packages/lib/models/utils/readOnly.js
 packages/lib/models/utils/resourceUtils.test.js
@@ -1645,6 +1645,7 @@ packages/lib/services/conflict/isConflictResolutionEnabled.js
 packages/lib/services/contextkey/contextkey.js
 packages/lib/services/database/addMigrationFile.js
 packages/lib/services/database/isSqliteSyntaxError.js
+packages/lib/services/database/kysely.js
 packages/lib/services/database/migrations/42.js
 packages/lib/services/database/migrations/43.js
 packages/lib/services/database/migrations/44.js
@@ -1658,7 +1659,7 @@ packages/lib/services/database/migrations/51.js
 packages/lib/services/database/migrations/52.js
 packages/lib/services/database/migrations/53.js
 packages/lib/services/database/migrations/index.js
-packages/lib/services/database/sqlStringToLines.js
+packages/lib/services/database/schema.js
 packages/lib/services/database/types.js
 packages/lib/services/debug/populateDatabase.js
 packages/lib/services/e2ee/EncryptionService.test.js

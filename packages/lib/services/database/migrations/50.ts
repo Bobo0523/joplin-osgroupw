@@ -1,10 +1,13 @@
-import { SqlQuery } from '../types';
+import { Migration } from '../types';
+import { addColumn, column } from '../schema';
 
-export default (): (SqlQuery|string)[] => {
+const migration: Migration = () => {
 	return [
-		'ALTER TABLE notes ADD COLUMN is_locked INT NOT NULL DEFAULT 0',
-		'ALTER TABLE notes ADD COLUMN extracted_resource_ids TEXT NOT NULL DEFAULT ""',
-		'ALTER TABLE revisions ADD COLUMN is_locked INT NOT NULL DEFAULT 0',
-		'ALTER TABLE resources ADD COLUMN is_locked INT NOT NULL DEFAULT 0',
+		addColumn('notes', 'is_locked', column.integer(0)),
+		addColumn('notes', 'extracted_resource_ids', column.text('')),
+		addColumn('revisions', 'is_locked', column.integer(0)),
+		addColumn('resources', 'is_locked', column.integer(0)),
 	];
 };
+
+export default migration;

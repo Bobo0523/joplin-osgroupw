@@ -1,4 +1,5 @@
 const baseConfig = require('../../jest.config.base.js');
+const esmModulesConfig = require('../../jest.esmModules.js');
 
 const testPathIgnorePatterns = [
 	'<rootDir>/node_modules/',
@@ -16,6 +17,8 @@ module.exports = {
 	testMatch: [
 		'**/*.test.js',
 	],
+
+	...esmModulesConfig(),
 
 	testPathIgnorePatterns: testPathIgnorePatterns,
 

@@ -50,6 +50,7 @@ import WebDavApi from '../WebDavApi';
 const DropboxApi = require('../DropboxApi');
 import JoplinServerApi, { Session } from '../JoplinServerApi';
 import { FolderEntity, ResourceEntity } from '../services/database/types';
+import { clearTablesQueries } from '../services/database/schema';
 import { credentialFile, readCredentialFile } from '../utils/credentialFiles';
 import SyncTargetJoplinCloud from '../SyncTargetJoplinCloud';
 import KeychainService from '../services/keychain/KeychainService';
@@ -339,12 +340,7 @@ async function clearDatabase(id: number = null) {
 		'tags',
 	];
 
-	const queries = [];
-	for (const n of tableNames) {
-		queries.push(`DELETE FROM ${n}`);
-		queries.push(`DELETE FROM sqlite_sequence WHERE name="${n}"`); // Reset autoincremented IDs
-	}
-	await databases_[id].transactionExecBatch(queries);
+	await databases_[id].transactionExecBatch(clearTablesQueries(tableNames));
 }
 
 async function setupDatabase(id: number = null, options: { keychainEnabled?: boolean } = null) {

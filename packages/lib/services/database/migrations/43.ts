@@ -1,10 +1,13 @@
-import { SqlQuery } from '../types';
+import { Migration } from '../types';
+import { addColumn, column } from '../schema';
 
-export default (): (SqlQuery|string)[] => {
+const migration: Migration = () => {
 	return [
-		'ALTER TABLE `notes` ADD COLUMN `user_data` TEXT NOT NULL DEFAULT ""',
-		'ALTER TABLE `tags` ADD COLUMN `user_data` TEXT NOT NULL DEFAULT ""',
-		'ALTER TABLE `folders` ADD COLUMN `user_data` TEXT NOT NULL DEFAULT ""',
-		'ALTER TABLE `resources` ADD COLUMN `user_data` TEXT NOT NULL DEFAULT ""',
+		addColumn('notes', 'user_data', column.text('')),
+		addColumn('tags', 'user_data', column.text('')),
+		addColumn('folders', 'user_data', column.text('')),
+		addColumn('resources', 'user_data', column.text('')),
 	];
 };
+
+export default migration;

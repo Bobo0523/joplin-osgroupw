@@ -3,7 +3,7 @@ import Setting from '../models/Setting';
 import shim from '../shim';
 import { reg } from '../registry';
 import { fileExtension } from '../path-utils';
-import { SqlQuery } from '../services/database/types';
+import { qb, Query } from '../services/database/kysely';
 
 interface Script {
 	exec: ()=> Promise<void>;
@@ -14,13 +14,13 @@ const script: Script = <Script>{};
 script.exec = async () => {
 	const stats = await shim.fsDriver().readDirStats(Setting.value('resourceDir'));
 
-	let queries: SqlQuery[] = [];
+	let queries: Query[] = [];
 	for (const stat of stats) {
 		if (fileExtension(stat.path) === 'crypted') continue;
 		const resourceId = Resource.pathToId(stat.path);
 		if (!resourceId) continue;
 
-		queries.push({ sql: 'UPDATE resources SET `size` = ? WHERE id = ?', params: [stat.size, resourceId] });
+		queries.push(qb.updateTable('resources').set({ size: stat.size }).where('id', '=', resourceId));
 
 		if (queries.length >= 1000) {
 			await reg.db().transactionExecBatch(queries);

@@ -7,6 +7,8 @@ import collectionToPaginatedResults from '../utils/collectionToPaginatedResults'
 import BaseItem from '../../../models/BaseItem';
 import { NoteEntity } from '../../database/types';
 import SearchEngineUtils, { NotesForQueryOptions } from '../../search/SearchEngineUtils';
+import { dynamicConditionBuilder } from '../../database/kysely';
+import { LoadOptions } from '../../../models/utils/types';
 
 export default async function(request: Request) {
 	if (request.method !== 'GET') throw new ErrorMethodNotAllowed();
@@ -20,9 +22,8 @@ export default async function(request: Request) {
 
 	if (modelType !== BaseItem.TYPE_NOTE) {
 		const ModelClass = BaseItem.getClassByItemType(modelType);
-		const options: { fields?: string[]; where: string; whereParams: string[]; caseInsensitive: boolean } = {
-			where: 'title LIKE ?',
-			whereParams: [query.replace(/\*/g, '%')],
+		const options: LoadOptions = {
+			where: dynamicConditionBuilder()('title', 'like', query.replace(/\*/g, '%')),
 			caseInsensitive: true,
 		};
 		const fields = requestFields(request, modelType);
