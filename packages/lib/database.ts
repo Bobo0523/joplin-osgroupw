@@ -1,9 +1,24 @@
 import Logger from '@joplin/utils/Logger';
 import time from './time';
 import shim from './shim';
-import { SqlParams, SqlQuery, StringOrSqlQuery } from './services/database/types';
+import { SqlParams, SqlQuery } from './services/database/types';
+import { AnyQuery, DynamicTables, dynamicKysely, isKyselyQuery, KyselyQuery, toSqlQuery } from './services/database/kysely';
+import { columnDefinition, createTableFromDefinitions, rawFragment } from './services/database/sqlFragments';
+import { CompiledQuery, Expression, ExpressionBuilder } from 'kysely';
 
 import { Mutex } from 'async-mutex';
+
+// Values are wrapped so that `undefined` values are still bound as parameters, as they were
+// before, rather than being dropped by Kysely.
+const dataToValues = (eb: ExpressionBuilder<DynamicTables, string>, data: Record<string, unknown>) => {
+	const output: Record<string, Expression<unknown>> = {};
+	for (const key in data) {
+		if (!data.hasOwnProperty(key)) continue;
+		if (key[key.length - 1] === '_') continue;
+		output[key] = eb.val(data[key]);
+	}
+	return output;
+};
 
 // Row values come back as SQLite primitives (string|number|null|Buffer for BLOBs)
 // but per-table column shapes vary, and callers across the codebase index without
@@ -75,50 +90,13 @@ export default class Database {
 		}
 	}
 
-	public escapeField(field: string) {
-		if (field === '*') return '*';
-		const p = field.split('.');
-		if (p.length === 1) return `\`${field}\``;
-		if (p.length === 2) return `${p[0]}.\`${p[1]}\``;
-
-		throw new Error(`Invalid field format: ${field}`);
-	}
-
-	public escapeFields(fields: string[] | string): string[] | string {
-		if (fields === '*') return '*';
-
-		const output = [];
-		for (let i = 0; i < fields.length; i++) {
-			output.push(this.escapeField(fields[i]));
-		}
-		return output;
-	}
-
-	public escapeValues(values: string[]) {
-		return values.map(value => {
-			// See https://www.sqlite.org/printf.html#percentq
-			return `'${value.replace(/[']/g, '\'\'')}'`;
-		});
-	}
-
-	public escapeFieldsToString(fields: string[] | string): string {
-		if (typeof fields === 'string') {
-			if (fields === '*') return '*';
-			throw new Error(`Invalid field value (only "*" is supported): ${fields}`);
-		}
-
-		const output = [];
-		for (let i = 0; i < fields.length; i++) {
-			output.push(this.escapeField(fields[i]));
-		}
-		return output.join(',');
-	}
-
-	public async tryCall(callName: string, inputSql: StringOrSqlQuery, inputParams: SqlParams) {
+	public async tryCall(callName: string, inputSql: AnyQuery, inputParams: SqlParams) {
 		let sql: string = null;
 		let params: SqlParams = null;
 
-		if (typeof inputSql === 'object') {
+		if (isKyselyQuery(inputSql)) {
+			({ sql, params } = toSqlQuery(inputSql));
+		} else if (typeof inputSql === 'object') {
 			params = (inputSql as SqlQuery).params;
 			sql = (inputSql as SqlQuery).sql;
 		} else {
@@ -174,7 +152,7 @@ export default class Database {
 		}
 	}
 
-	public async selectOne(sql: string, params: SqlParams = null): Promise<Row> {
+	public async selectOne(sql: string | KyselyQuery, params: SqlParams = null): Promise<Row> {
 		return this.tryCall('selectOne', sql, params);
 	}
 
@@ -187,27 +165,27 @@ export default class Database {
 		}
 	}
 
-	public async selectAll<T = Row>(sql: string, params: SqlParams = null): Promise<T[]> {
+	public async selectAll<T = Row>(sql: string | KyselyQuery<T>, params: SqlParams = null): Promise<T[]> {
 		return this.tryCall('selectAll', sql, params);
 	}
 
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field values are heterogeneous per query (string ids, numbers, booleans); callers across models narrow at use-site
-	public async selectAllFields(sql: string, params: SqlParams, field: string): Promise<any[]> {
+	public async selectAllFields(sql: string | KyselyQuery, params: SqlParams, field: string): Promise<any[]> {
 		const rows = await this.tryCall('selectAll', sql, params);
 		const output = [];
 		for (let i = 0; i < rows.length; i++) {
 			const v = rows[i][field];
-			if (!v) throw new Error(`No such field: ${field}. Query was: ${sql}`);
+			if (!v) throw new Error(`No such field: ${field}. Query was: ${isKyselyQuery(sql) ? toSqlQuery(sql).sql : sql}`);
 			output.push(rows[i][field]);
 		}
 		return output;
 	}
 
-	public async exec(sql: StringOrSqlQuery, params: SqlParams = null) {
+	public async exec(sql: AnyQuery, params: SqlParams = null) {
 		return this.tryCall('exec', sql, params);
 	}
 
-	public async transactionExecBatch(queries: StringOrSqlQuery[]) {
+	public async transactionExecBatch(queries: AnyQuery[]) {
 		if (queries.length <= 0) return;
 
 		if (queries.length === 1) {
@@ -295,96 +273,55 @@ export default class Database {
 	public static insertQuery(tableName: string, data: Record<string, any>) {
 		if (!data || !Object.keys(data).length) throw new Error('Data is empty');
 
-		let keySql = '';
-		let valueSql = '';
-		const params = [];
-		for (const key in data) {
-			if (!data.hasOwnProperty(key)) continue;
-			if (key[key.length - 1] === '_') continue;
-			if (keySql !== '') keySql += ', ';
-			if (valueSql !== '') valueSql += ', ';
-			keySql += `\`${key}\``;
-			valueSql += '?';
-			params.push(data[key]);
-		}
-		return {
-			sql: `INSERT INTO \`${tableName}\` (${keySql}) VALUES (${valueSql})`,
-			params: params,
-		};
+		const query = dynamicKysely.insertInto(tableName).values(eb => dataToValues(eb, data));
+		return toSqlQuery(query);
 	}
 
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- See insertQuery above
 	public static updateQuery(tableName: string, data: Record<string, any>, where: string | Record<string, any>) {
 		if (!data || !Object.keys(data).length) throw new Error('Data is empty');
 
-		let sql = '';
-		const params = [];
-		for (const key in data) {
-			if (!data.hasOwnProperty(key)) continue;
-			if (key[key.length - 1] === '_') continue;
-			if (sql !== '') sql += ', ';
-			sql += `\`${key}\`=?`;
-			params.push(data[key]);
-		}
+		let query = dynamicKysely.updateTable(tableName).set(eb => dataToValues(eb, data));
 
-		if (typeof where !== 'string') {
-			const s = [];
+		if (typeof where === 'string') {
+			query = query.where(rawFragment(where));
+		} else {
 			for (const n in where) {
 				if (!where.hasOwnProperty(n)) continue;
-				params.push(where[n]);
-				s.push(`\`${n}\`=?`);
+				query = query.where(n, '=', where[n]);
 			}
-			where = s.join(' AND ');
 		}
 
-		return {
-			sql: `UPDATE \`${tableName}\` SET ${sql} WHERE ${where}`,
-			params: params,
-		};
+		return toSqlQuery(query);
 	}
 
 	public alterColumnQueries(tableName: string, fields: Record<string, string>) {
-		const fieldsNoType = [];
-		for (const n in fields) {
-			if (!fields.hasOwnProperty(n)) continue;
-			fieldsNoType.push(n);
+		const fieldsNoType = Object.keys(fields);
+		const backupTableName = `${tableName}_backup`;
+
+		let createBackupTable = dynamicKysely.schema.createTable(backupTableName).temporary();
+		for (const n of fieldsNoType) {
+			createBackupTable = createBackupTable.addColumn(n, columnDefinition(fields[n]));
 		}
 
-		const fieldsWithType = [];
-		for (const n in fields) {
-			if (!fields.hasOwnProperty(n)) continue;
-			fieldsWithType.push(`${this.escapeField(n)} ${fields[n]}`);
-		}
+		const queries: (KyselyQuery | CompiledQuery)[] = [
+			createBackupTable,
+			dynamicKysely.insertInto(backupTableName).expression(dynamicKysely.selectFrom(tableName).select(fieldsNoType)),
+			dynamicKysely.schema.dropTable(tableName),
+			createTableFromDefinitions(tableName, fields).compile(dynamicKysely),
+			dynamicKysely.insertInto(tableName).expression(dynamicKysely.selectFrom(backupTableName).select(fieldsNoType)),
+			dynamicKysely.schema.dropTable(backupTableName),
+		];
 
-		let sql = `
-			CREATE TEMPORARY TABLE _BACKUP_TABLE_NAME_(_FIELDS_TYPE_);
-			INSERT INTO _BACKUP_TABLE_NAME_ SELECT _FIELDS_NO_TYPE_ FROM _TABLE_NAME_;
-			DROP TABLE _TABLE_NAME_;
-			CREATE TABLE _TABLE_NAME_(_FIELDS_TYPE_);
-			INSERT INTO _TABLE_NAME_ SELECT _FIELDS_NO_TYPE_ FROM _BACKUP_TABLE_NAME_;
-			DROP TABLE _BACKUP_TABLE_NAME_;
-		`;
-
-		sql = sql.replace(/_BACKUP_TABLE_NAME_/g, this.escapeField(`${tableName}_backup`));
-		sql = sql.replace(/_TABLE_NAME_/g, this.escapeField(tableName));
-		sql = sql.replace(/_FIELDS_NO_TYPE_/g, (this.escapeFields(fieldsNoType) as string[]).join(','));
-		sql = sql.replace(/_FIELDS_TYPE_/g, fieldsWithType.join(','));
-
-		return sql.trim().split('\n');
+		return queries.map(q => toSqlQuery(q));
 	}
 
-	public wrapQueries(queries: (string | SqlQuery | [string, SqlParams?])[]) {
-		const output = [];
-		for (let i = 0; i < queries.length; i++) {
-			output.push(this.wrapQuery(queries[i]));
-		}
-		return output;
-	}
-
-	public wrapQuery(sql: string | SqlQuery | [string, SqlParams?], params: SqlParams = null): SqlQuery {
+	public wrapQuery(sql: AnyQuery | [string, SqlParams?], params: SqlParams = null): SqlQuery {
 		if (!sql) throw new Error(`Cannot wrap empty string: ${sql}`);
 
-		if (Array.isArray(sql)) {
+		if (isKyselyQuery(sql)) {
+			return toSqlQuery(sql);
+		} else if (Array.isArray(sql)) {
 			return {
 				sql: sql[0],
 				params: sql.length >= 2 ? sql[1] : null,
@@ -392,7 +329,7 @@ export default class Database {
 		} else if (typeof sql === 'string') {
 			return { sql: sql, params: params };
 		} else {
-			return sql; // Already wrapped
+			return sql as SqlQuery; // Already wrapped
 		}
 	}
 }

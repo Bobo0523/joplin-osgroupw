@@ -21,6 +21,12 @@ module.exports = {
 
 	testEnvironment: 'node',
 
+	transform: {
+		'/node_modules/kysely/.+\\.js$': `${__dirname}/jestKyselyTransform.js`,
+		'\\.[jt]sx?$': 'babel-jest',
+	},
+	transformIgnorePatterns: ['/node_modules/(?!kysely/)'],
+
 	setupFilesAfterEnv: [
 		'jest-expect-message',
 		`${__dirname}/jest.setup.js`,

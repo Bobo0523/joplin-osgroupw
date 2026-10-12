@@ -2,7 +2,8 @@ import JoplinDatabase from '../../JoplinDatabase';
 import BaseItem from '../../models/BaseItem';
 import Setting from '../../models/Setting';
 import SyncTargetRegistry from '../../SyncTargetRegistry';
-import { SqlQuery } from '../database/types';
+import { AnyQuery, kysely } from '../database/kysely';
+import { KyselyTableName } from '../database/kyselyTypes';
 
 async function clearSyncContext() {
 	const syncTargetIds = SyncTargetRegistry.allIds();
@@ -18,9 +19,9 @@ async function clearSyncContext() {
 }
 
 export async function clearLocalSyncStateForReupload(db: JoplinDatabase) {
-	const queries: SqlQuery[] = [
-		{ sql: 'DELETE FROM deleted_items' },
-		{ sql: 'DELETE FROM sync_items' },
+	const queries: AnyQuery[] = [
+		kysely.deleteFrom('deleted_items'),
+		kysely.deleteFrom('sync_items'),
 	];
 
 	await db.transactionExecBatch(queries);
@@ -29,18 +30,18 @@ export async function clearLocalSyncStateForReupload(db: JoplinDatabase) {
 }
 
 export async function clearLocalDataForRedownload(db: JoplinDatabase) {
-	const queries: SqlQuery[] = [
-		{ sql: 'DELETE FROM deleted_items' },
-		{ sql: 'DELETE FROM sync_items' },
-		{ sql: 'DELETE FROM item_changes' },
-		{ sql: 'DELETE FROM note_resources' },
+	const queries: AnyQuery[] = [
+		kysely.deleteFrom('deleted_items'),
+		kysely.deleteFrom('sync_items'),
+		kysely.deleteFrom('item_changes'),
+		kysely.deleteFrom('note_resources'),
 	];
 
 	const syncItemTypes = BaseItem.syncItemTypes();
 
 	for (const syncItemType of syncItemTypes) {
 		const SyncItemClass = BaseItem.getClassByItemType(syncItemType);
-		queries.push({ sql: `DELETE FROM ${db.escapeField(SyncItemClass.tableName())}` });
+		queries.push(kysely.deleteFrom(SyncItemClass.tableName() as KyselyTableName));
 	}
 
 	await db.transactionExecBatch(queries);

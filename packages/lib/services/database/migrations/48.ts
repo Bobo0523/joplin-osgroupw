@@ -1,7 +1,8 @@
-import { SqlQuery } from '../types';
+import { AnyQuery } from '../kysely';
+import { schemaOcrDriverIdV48 } from '../sqlFragments';
 
-export default (): (SqlQuery|string)[] => {
+export default (): AnyQuery[] => {
 	return [
-		'ALTER TABLE `resources` ADD COLUMN `ocr_driver_id` INT NOT NULL DEFAULT "1"',
+		...schemaOcrDriverIdV48(),
 	];
 };

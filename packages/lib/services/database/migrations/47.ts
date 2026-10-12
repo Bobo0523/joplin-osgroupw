@@ -1,7 +1,8 @@
-import { SqlQuery } from '../types';
+import { AnyQuery } from '../kysely';
+import { schemaSyncWarningIgnoredV47 } from '../sqlFragments';
 
-export default (): (SqlQuery|string)[] => {
+export default (): AnyQuery[] => {
 	return [
-		'ALTER TABLE sync_items ADD COLUMN sync_warning_ignored INT NOT NULL DEFAULT "0"',
+		...schemaSyncWarningIgnoredV47(),
 	];
 };

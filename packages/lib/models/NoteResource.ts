@@ -1,5 +1,7 @@
 import BaseModel from '../BaseModel';
-import { NoteEntity, SqlQuery } from '../services/database/types';
+import { NoteEntity } from '../services/database/types';
+import { insertRow, kysely, KyselyQuery, toSqlQuery } from '../services/database/kysely';
+import { KyselyDatabase } from '../services/database/kyselyTypes';
 import BaseItem from './BaseItem';
 import { LoadOptions } from './utils/types';
 
@@ -23,22 +25,19 @@ export default class NoteResource extends BaseModel {
 	}
 
 	public static async applySharedStatusToLinkedResources() {
-		const queries: SqlQuery[] = [];
+		const queries: KyselyQuery[] = [];
 
-		queries.push({ sql: `
-			UPDATE resources
-			SET is_shared = 0
-		` });
+		queries.push(kysely.updateTable('resources').set({ is_shared: 0 }));
 
-		queries.push({ sql: `
-			UPDATE resources
-			SET is_shared = 1
-			WHERE id IN (
-				SELECT DISTINCT note_resources.resource_id
-				FROM notes JOIN note_resources ON notes.id = note_resources.note_id
-				WHERE notes.is_shared = 1
-			)
-		` });
+		queries.push(
+			kysely.updateTable('resources')
+				.set({ is_shared: 1 })
+				.where('id', 'in', kysely.selectFrom('notes')
+					.innerJoin('note_resources', 'notes.id', 'note_resources.note_id')
+					.select('note_resources.resource_id')
+					.distinct()
+					.where('notes.is_shared', '=', 1)),
+		);
 
 		await this.db().transactionExecBatch(queries);
 	}
@@ -78,7 +77,7 @@ export default class NoteResource extends BaseModel {
 	// }
 
 	public static async associatedNoteIds(resourceId: string): Promise<string[]> {
-		const rows = await this.modelSelectAll('SELECT note_id FROM note_resources WHERE resource_id = ? AND is_associated = 1', [resourceId]);
+		const rows = await this.modelSelectAll(toSqlQuery(kysely.selectFrom('note_resources').select('note_id').where('resource_id', '=', resourceId).where('is_associated', '=', 1)));
 		return rows.map((r: { note_id: string }) => r.note_id);
 	}
 
@@ -89,13 +88,14 @@ export default class NoteResource extends BaseModel {
 		fields.push('resource_id');
 		fields.push('note_id');
 
-		const rows = await this.modelSelectAll(`
-			SELECT ${this.selectFields({ ...options, fields })}
-			FROM note_resources
-			LEFT JOIN notes
-			ON notes.id = note_resources.note_id
-			WHERE resource_id IN (${this.escapeIdsForSql(resourceIds)}) AND is_associated = 1
-		`);
+		type JoinedColumn = keyof KyselyDatabase['note_resources'] | keyof KyselyDatabase['notes'];
+		const rows = await this.modelSelectAll(toSqlQuery(
+			kysely.selectFrom('note_resources')
+				.leftJoin('notes', 'notes.id', 'note_resources.note_id')
+				.select(fields as JoinedColumn[])
+				.where('note_resources.resource_id', 'in', resourceIds)
+				.where('note_resources.is_associated', '=', 1),
+		));
 
 		const output: Record<string, AssociatedResourceNote[]> = {};
 		for (const row of rows) {
@@ -107,32 +107,36 @@ export default class NoteResource extends BaseModel {
 	}
 
 	public static async setAssociatedResources(noteId: string, resourceIds: string[]) {
-		const existingRows = await this.modelSelectAll('SELECT * FROM note_resources WHERE note_id = ?', [noteId]);
+		const existingRows = await this.modelSelectAll(toSqlQuery(kysely.selectFrom('note_resources').selectAll().where('note_id', '=', noteId)));
 
 		const notProcessedResourceIds = resourceIds.slice();
-		const queries = [];
+		const queries: KyselyQuery[] = [];
 		for (let i = 0; i < existingRows.length; i++) {
 			const row = existingRows[i];
 			const resourceIndex = resourceIds.indexOf(row.resource_id);
 
 			if (resourceIndex >= 0) {
-				queries.push({ sql: 'UPDATE note_resources SET last_seen_time = ?, is_associated = 1 WHERE id = ?', params: [Date.now(), row.id] });
+				queries.push(kysely.updateTable('note_resources').set({ last_seen_time: Date.now(), is_associated: 1 }).where('id', '=', row.id));
 				notProcessedResourceIds.splice(notProcessedResourceIds.indexOf(row.resource_id), 1);
 			} else {
-				queries.push({ sql: 'UPDATE note_resources SET is_associated = 0 WHERE id = ?', params: [row.id] });
+				queries.push(kysely.updateTable('note_resources').set({ is_associated: 0 }).where('id', '=', row.id));
 			}
 		}
 
 		for (let i = 0; i < notProcessedResourceIds.length; i++) {
-			queries.push({ sql: 'INSERT INTO note_resources (note_id, resource_id, is_associated, last_seen_time) VALUES (?, ?, ?, ?)', params: [noteId, notProcessedResourceIds[i], 1, Date.now()] });
+			queries.push(kysely.insertInto('note_resources').values(insertRow('note_resources', { note_id: noteId, resource_id: notProcessedResourceIds[i], is_associated: 1, last_seen_time: Date.now() })));
 		}
 
 		await this.db().transactionExecBatch(queries);
 	}
 
 	public static async addOrphanedResources() {
-		const missingResources = await this.db().selectAll('SELECT id FROM resources WHERE id NOT IN (SELECT DISTINCT resource_id FROM note_resources)');
-		const queries = [];
+		const missingResources = await this.db().selectAll(
+			kysely.selectFrom('resources')
+				.select('id')
+				.where('id', 'not in', kysely.selectFrom('note_resources').select('resource_id').distinct()),
+		);
+		const queries: KyselyQuery[] = [];
 		for (let i = 0; i < missingResources.length; i++) {
 			const id = missingResources[i].id;
 
@@ -147,36 +151,30 @@ export default class NoteResource extends BaseModel {
 			const hasBeenSynced = await BaseItem.itemHasBeenSynced(id);
 			const lastSeenTime = hasBeenSynced ? 0 : Date.now();
 
-			queries.push({
-				sql: 'INSERT INTO note_resources (note_id, resource_id, is_associated, last_seen_time) VALUES (?, ?, ?, ?)',
-				params: ['', id, 0, lastSeenTime] },
-			);
+			queries.push(kysely.insertInto('note_resources').values(insertRow('note_resources', { note_id: '', resource_id: id, is_associated: 0, last_seen_time: lastSeenTime })));
 		}
 		await this.db().transactionExecBatch(queries);
 	}
 
 	public static async remove(noteId: string) {
-		await this.db().exec({ sql: 'UPDATE note_resources SET is_associated = 0 WHERE note_id = ?', params: [noteId] });
+		await this.db().exec(kysely.updateTable('note_resources').set({ is_associated: 0 }).where('note_id', '=', noteId));
 	}
 
 	public static async orphanResources(expiryDelay: number = null) {
 		if (expiryDelay === null) expiryDelay = 1000 * 60 * 60 * 24 * 10;
 		const cutOffTime = Date.now() - expiryDelay;
-		const output = await this.modelSelectAll(
-			`
-			SELECT resource_id, sum(is_associated)
-			FROM note_resources
-			GROUP BY resource_id
-			HAVING sum(is_associated) <= 0
-			AND last_seen_time < ?
-			AND last_seen_time != 0
-		`,
-			[cutOffTime],
-		);
+		const output = await this.modelSelectAll(toSqlQuery(
+			kysely.selectFrom('note_resources')
+				.select('resource_id')
+				.groupBy('resource_id')
+				.having(eb => eb.fn.sum('is_associated'), '<=', 0)
+				.having('last_seen_time', '<', cutOffTime)
+				.having('last_seen_time', '!=', 0),
+		));
 		return output.map((r: { resource_id: string }) => r.resource_id);
 	}
 
 	public static async deleteByResource(resourceId: string) {
-		await this.db().exec('DELETE FROM note_resources WHERE resource_id = ?', [resourceId]);
+		await this.db().exec(kysely.deleteFrom('note_resources').where('resource_id', '=', resourceId));
 	}
 }

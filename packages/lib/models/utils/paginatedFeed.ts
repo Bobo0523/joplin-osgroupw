@@ -1,5 +1,7 @@
 import JoplinDatabase from '../../JoplinDatabase';
-import paginationToSql from './paginationToSql';
+import { dynamicKysely } from '../../services/database/kysely';
+import { rawFragment } from '../../services/database/sqlFragments';
+import paginationToOrderBy from './paginationToSql';
 import { Pagination, PaginationOrder } from './types';
 
 export interface ModelFeedPage {
@@ -19,9 +21,6 @@ export interface WhereQuery {
 export default async function(db: JoplinDatabase, tableName: string, pagination: Pagination, whereQuery: WhereQuery = null, fields: string[] = null): Promise<ModelFeedPage> {
 	fields = fields ? fields.slice() : ['id'];
 
-	const where = whereQuery && whereQuery.sql ? [whereQuery.sql] : [];
-	const sqlParams = whereQuery && whereQuery.params ? whereQuery.params.slice() : [];
-
 	if (!pagination.order.length) throw new Error('Pagination order must be provided');
 	if (pagination.order.length > 1) throw new Error('Only one pagination order field can be provided');
 
@@ -38,19 +37,14 @@ export default async function(db: JoplinDatabase, tableName: string, pagination:
 		};
 	}
 
-	const orderBySql = paginationToSql(pagination);
-	const fieldsSql = fields.length ? db.escapeFields(fields) : '*';
 	const offset = (pagination.page - 1) * pagination.limit;
 
-	const sql = `
-		SELECT ${fieldsSql} FROM \`${tableName}\`
-		${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-		ORDER BY ${orderBySql}
-		LIMIT ${pagination.limit}
-		OFFSET ${offset}
-	`;
+	let query = fields.length ? dynamicKysely.selectFrom(tableName).select(fields) : dynamicKysely.selectFrom(tableName).selectAll();
+	if (whereQuery && whereQuery.sql) query = query.where(rawFragment(whereQuery.sql, whereQuery.params ? whereQuery.params : []));
+	for (const orderBy of paginationToOrderBy(pagination)) query = query.orderBy(orderBy);
+	query = query.limit(pagination.limit).offset(offset);
 
-	const rows = await db.selectAll(sql, sqlParams);
+	const rows = await db.selectAll(query);
 
 	return {
 		items: rows,

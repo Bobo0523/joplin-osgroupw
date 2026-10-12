@@ -1,10 +1,8 @@
-import { SqlQuery } from '../types';
+import { AnyQuery } from '../kysely';
+import { schemaUserDataV43 } from '../sqlFragments';
 
-export default (): (SqlQuery|string)[] => {
+export default (): AnyQuery[] => {
 	return [
-		'ALTER TABLE `notes` ADD COLUMN `user_data` TEXT NOT NULL DEFAULT ""',
-		'ALTER TABLE `tags` ADD COLUMN `user_data` TEXT NOT NULL DEFAULT ""',
-		'ALTER TABLE `folders` ADD COLUMN `user_data` TEXT NOT NULL DEFAULT ""',
-		'ALTER TABLE `resources` ADD COLUMN `user_data` TEXT NOT NULL DEFAULT ""',
+		...schemaUserDataV43(),
 	];
 };

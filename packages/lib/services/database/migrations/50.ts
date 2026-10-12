@@ -1,10 +1,8 @@
-import { SqlQuery } from '../types';
+import { AnyQuery } from '../kysely';
+import { schemaIsLockedV50 } from '../sqlFragments';
 
-export default (): (SqlQuery|string)[] => {
+export default (): AnyQuery[] => {
 	return [
-		'ALTER TABLE notes ADD COLUMN is_locked INT NOT NULL DEFAULT 0',
-		'ALTER TABLE notes ADD COLUMN extracted_resource_ids TEXT NOT NULL DEFAULT ""',
-		'ALTER TABLE revisions ADD COLUMN is_locked INT NOT NULL DEFAULT 0',
-		'ALTER TABLE resources ADD COLUMN is_locked INT NOT NULL DEFAULT 0',
+		...schemaIsLockedV50(),
 	];
 };

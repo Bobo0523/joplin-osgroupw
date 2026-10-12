@@ -1,7 +1,8 @@
-import { SqlQuery } from '../types';
+import { AnyQuery } from '../kysely';
+import { schemaRemoteItemUpdatedTimeV49 } from '../sqlFragments';
 
-export default (): (SqlQuery|string)[] => {
+export default (): AnyQuery[] => {
 	return [
-		'ALTER TABLE sync_items ADD COLUMN remote_item_updated_time INT NOT NULL DEFAULT 0',
+		...schemaRemoteItemUpdatedTimeV49(),
 	];
 };

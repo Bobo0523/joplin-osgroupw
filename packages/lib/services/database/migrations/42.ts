@@ -1,7 +1,7 @@
 import addMigrationFile from '../addMigrationFile';
-import { SqlQuery } from '../types';
+import { AnyQuery } from '../kysely';
 
-export default (): (SqlQuery|string)[] => {
+export default (): AnyQuery[] => {
 	return [
 		addMigrationFile(42),
 	];

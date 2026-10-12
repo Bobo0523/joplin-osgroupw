@@ -1341,6 +1341,7 @@ packages/lib/ArrayUtils.js
 packages/lib/AsyncActionQueue.test.js
 packages/lib/AsyncActionQueue.js
 packages/lib/BaseApplication.js
+packages/lib/BaseModel.options.test.js
 packages/lib/BaseModel.test.js
 packages/lib/BaseModel.js
 packages/lib/BaseSyncTarget.js
@@ -1513,6 +1514,7 @@ packages/lib/models/MasterKey.test.js
 packages/lib/models/MasterKey.js
 packages/lib/models/Migration.js
 packages/lib/models/Note.customSortOrder.test.js
+packages/lib/models/Note.previews.test.js
 packages/lib/models/Note.test.js
 packages/lib/models/Note.js
 packages/lib/models/NoteEmbedding.test.js
@@ -1547,6 +1549,7 @@ packages/lib/models/utils/isJoplinServerVariant.js
 packages/lib/models/utils/itemCanBeEncrypted.js
 packages/lib/models/utils/onFolderDrop.test.js
 packages/lib/models/utils/onFolderDrop.js
+packages/lib/models/utils/paginatedFeed.test.js
 packages/lib/models/utils/paginatedFeed.js
 packages/lib/models/utils/paginationToSql.js
 packages/lib/models/utils/readOnly.test.js
@@ -1671,6 +1674,9 @@ packages/lib/services/conflict/isConflictResolutionEnabled.js
 packages/lib/services/contextkey/contextkey.js
 packages/lib/services/database/addMigrationFile.js
 packages/lib/services/database/isSqliteSyntaxError.js
+packages/lib/services/database/kysely.test.js
+packages/lib/services/database/kysely.js
+packages/lib/services/database/kyselyTypes.js
 packages/lib/services/database/migrations/42.js
 packages/lib/services/database/migrations/43.js
 packages/lib/services/database/migrations/44.js
@@ -1684,7 +1690,8 @@ packages/lib/services/database/migrations/51.js
 packages/lib/services/database/migrations/52.js
 packages/lib/services/database/migrations/53.js
 packages/lib/services/database/migrations/index.js
-packages/lib/services/database/sqlStringToLines.js
+packages/lib/services/database/schema.test.js
+packages/lib/services/database/sqlFragments.js
 packages/lib/services/database/types.js
 packages/lib/services/debug/populateDatabase.js
 packages/lib/services/e2ee/EncryptionService.test.js
@@ -1892,6 +1899,7 @@ packages/lib/services/search/filterParser.test.js
 packages/lib/services/search/filterParser.js
 packages/lib/services/search/gotoAnythingStyleQuery.test.js
 packages/lib/services/search/gotoAnythingStyleQuery.js
+packages/lib/services/search/queryBuilder.test.js
 packages/lib/services/search/queryBuilder.js
 packages/lib/services/share/ShareService.test.js
 packages/lib/services/share/ShareService.js

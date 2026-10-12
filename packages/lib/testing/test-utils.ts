@@ -50,6 +50,7 @@ import WebDavApi from '../WebDavApi';
 const DropboxApi = require('../DropboxApi');
 import JoplinServerApi, { Session } from '../JoplinServerApi';
 import { FolderEntity, ResourceEntity } from '../services/database/types';
+import { AnyQuery, kysely } from '../services/database/kysely';
 import { credentialFile, readCredentialFile } from '../utils/credentialFiles';
 import SyncTargetJoplinCloud from '../SyncTargetJoplinCloud';
 import KeychainService from '../services/keychain/KeychainService';
@@ -337,12 +338,12 @@ async function clearDatabase(id: number = null) {
 		'settings',
 		'sync_items',
 		'tags',
-	];
+	] as const;
 
-	const queries = [];
+	const queries: AnyQuery[] = [];
 	for (const n of tableNames) {
-		queries.push(`DELETE FROM ${n}`);
-		queries.push(`DELETE FROM sqlite_sequence WHERE name="${n}"`); // Reset autoincremented IDs
+		queries.push(kysely.deleteFrom(n));
+		queries.push(kysely.deleteFrom('sqlite_sequence').where('name', '=', n)); // Reset autoincremented IDs
 	}
 	await databases_[id].transactionExecBatch(queries);
 }

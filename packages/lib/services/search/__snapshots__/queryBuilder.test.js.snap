@@ -1,0 +1,401 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`queryBuilder should build query for -id:abc -notebook:nb1 -tag:tag1 -resource:application/pdf 1`] = `
+{
+  "fts": {
+    "params": [
+      "abc",
+      "nb1",
+      "tag1",
+      "application/pdf",
+    ],
+    "query": "WITH RECURSIVE notebooks_not_in_scope(id) AS ( SELECT folders.id FROM folders WHERE id IN ( SELECT id FROM folders WHERE folders.title LIKE ? ) UNION ALL SELECT folders.id FROM folders JOIN notebooks_not_in_scope ON folders.parent_id=notebooks_not_in_scope.id ), notes_with_EXCLUSION_tags AS ( SELECT note_tags.note_id as id FROM note_tags WHERE 0 UNION SELECT note_tags.note_id AS id FROM note_tags WHERE note_tags.tag_id IN ( SELECT tags.id FROM tags WHERE tags.title LIKE ?) ), notes_with_EXCLUSION_resources AS ( SELECT note_resources.note_id as id FROM note_resources WHERE 0 UNION SELECT note_resources.note_id AS id FROM note_resources WHERE note_resources.is_associated=1 AND note_resources.resource_id IN ( SELECT resources.id FROM resources WHERE resources.mime LIKE ?) ) SELECT notes_fts.id, notes_fts.title, offsets(notes_fts) AS offsets, matchinfo(notes_fts, 'pcnalx') AS matchinfo, notes_fts.user_created_time, notes_fts.user_updated_time, notes_fts.is_todo, notes_fts.todo_completed, notes_fts.parent_id FROM notes_fts WHERE 1 AND ( ROWID IN ( SELECT ROWID FROM notes_normalized WHERE id NOT LIKE ? )) AND ROWID NOT IN ( SELECT notes_normalized.ROWID FROM notebooks_not_in_scope JOIN notes_normalized ON notebooks_not_in_scope.id=notes_normalized.parent_id ) AND ROWID NOT IN ( SELECT notes_normalized.ROWID FROM notes_with_EXCLUSION_tags JOIN notes_normalized ON notes_with_EXCLUSION_tags.id=notes_normalized.id ) AND ROWID NOT IN ( SELECT notes_normalized.ROWID FROM notes_with_EXCLUSION_resources JOIN notes_normalized ON notes_with_EXCLUSION_resources.id=notes_normalized.id )",
+  },
+  "noFts": {
+    "params": [
+      "abc",
+      "nb1",
+      "tag1",
+      "application/pdf",
+    ],
+    "query": "WITH RECURSIVE notebooks_not_in_scope(id) AS ( SELECT folders.id FROM folders WHERE id IN ( SELECT id FROM folders WHERE folders.title LIKE ? ) UNION ALL SELECT folders.id FROM folders JOIN notebooks_not_in_scope ON folders.parent_id=notebooks_not_in_scope.id ), notes_with_EXCLUSION_tags AS ( SELECT note_tags.note_id as id FROM note_tags WHERE 0 UNION SELECT note_tags.note_id AS id FROM note_tags WHERE note_tags.tag_id IN ( SELECT tags.id FROM tags WHERE tags.title LIKE ?) ), notes_with_EXCLUSION_resources AS ( SELECT note_resources.note_id as id FROM note_resources WHERE 0 UNION SELECT note_resources.note_id AS id FROM note_resources WHERE note_resources.is_associated=1 AND note_resources.resource_id IN ( SELECT resources.id FROM resources WHERE resources.mime LIKE ?) ) SELECT notes.id, notes.title, notes.user_created_time, notes.user_updated_time, notes.is_todo, notes.todo_completed, notes.parent_id FROM notes WHERE 1 AND ( ROWID IN ( SELECT ROWID FROM notes WHERE id NOT LIKE ? )) AND ROWID NOT IN ( SELECT notes.ROWID FROM notebooks_not_in_scope JOIN notes ON notebooks_not_in_scope.id=notes.parent_id ) AND ROWID NOT IN ( SELECT notes.ROWID FROM notes_with_EXCLUSION_tags JOIN notes ON notes_with_EXCLUSION_tags.id=notes.id ) AND ROWID NOT IN ( SELECT notes.ROWID FROM notes_with_EXCLUSION_resources JOIN notes ON notes_with_EXCLUSION_resources.id=notes.id )",
+  },
+}
+`;
+
+exports[`queryBuilder should build query for any:1 created:20200101 -due:20200102 1`] = `
+{
+  "fts": {
+    "params": [
+      "<timestamp>",
+      "<timestamp>",
+    ],
+    "query": "SELECT notes_fts.id, notes_fts.title, offsets(notes_fts) AS offsets, matchinfo(notes_fts, 'pcnalx') AS matchinfo, notes_fts.user_created_time, notes_fts.user_updated_time, notes_fts.is_todo, notes_fts.todo_completed, notes_fts.parent_id FROM notes_fts WHERE ROWID=-1 OR ( ROWID IN ( SELECT ROWID FROM notes_normalized WHERE notes_normalized.user_created_time >= ? )) OR ( is_todo IS 1 AND ROWID IN ( SELECT ROWID FROM notes_normalized WHERE todo_due < ? ))",
+  },
+  "noFts": {
+    "params": [
+      "<timestamp>",
+      "<timestamp>",
+    ],
+    "query": "SELECT notes.id, notes.title, notes.user_created_time, notes.user_updated_time, notes.is_todo, notes.todo_completed, notes.parent_id FROM notes WHERE ROWID=-1 OR ( ROWID IN ( SELECT ROWID FROM notes WHERE notes.user_created_time >= ? )) OR ( is_todo IS 1 AND ROWID IN ( SELECT ROWID FROM notes WHERE todo_due < ? ))",
+  },
+}
+`;
+
+exports[`queryBuilder should build query for any:1 id:abc -tag:tag1 -resource:image/png 1`] = `
+{
+  "fts": {
+    "params": [
+      "abc",
+      "tag1",
+      "image/png",
+    ],
+    "query": "WITH RECURSIVE all_notes_with_EXCLUSION_tags AS ( SELECT DISTINCT note_tags.note_id AS id FROM note_tags ), notes_with_EXCLUSION_tags AS ( SELECT * FROM ( SELECT * FROM all_notes_with_EXCLUSION_tags EXCEPT SELECT note_tags.note_id AS id FROM note_tags WHERE note_tags.tag_id IN ( SELECT tags.id FROM tags WHERE tags.title LIKE ?) ) ), all_notes_with_EXCLUSION_resources AS ( SELECT DISTINCT note_resources.note_id AS id FROM note_resources ), notes_with_EXCLUSION_resources AS ( SELECT * FROM ( SELECT * FROM all_notes_with_EXCLUSION_resources EXCEPT SELECT note_resources.note_id AS id FROM note_resources WHERE note_resources.is_associated=1 AND note_resources.resource_id IN ( SELECT resources.id FROM resources WHERE resources.mime LIKE ?) ) ) SELECT notes_fts.id, notes_fts.title, offsets(notes_fts) AS offsets, matchinfo(notes_fts, 'pcnalx') AS matchinfo, notes_fts.user_created_time, notes_fts.user_updated_time, notes_fts.is_todo, notes_fts.todo_completed, notes_fts.parent_id FROM notes_fts WHERE ROWID=-1 OR ( ROWID IN ( SELECT ROWID FROM notes_normalized WHERE id LIKE ? )) OR ROWID IN ( SELECT notes_normalized.ROWID FROM notes_with_EXCLUSION_tags JOIN notes_normalized ON notes_with_EXCLUSION_tags.id=notes_normalized.id ) OR ROWID IN ( SELECT notes_normalized.ROWID FROM notes_with_EXCLUSION_resources JOIN notes_normalized ON notes_with_EXCLUSION_resources.id=notes_normalized.id )",
+  },
+  "noFts": {
+    "params": [
+      "abc",
+      "tag1",
+      "image/png",
+    ],
+    "query": "WITH RECURSIVE all_notes_with_EXCLUSION_tags AS ( SELECT DISTINCT note_tags.note_id AS id FROM note_tags ), notes_with_EXCLUSION_tags AS ( SELECT * FROM ( SELECT * FROM all_notes_with_EXCLUSION_tags EXCEPT SELECT note_tags.note_id AS id FROM note_tags WHERE note_tags.tag_id IN ( SELECT tags.id FROM tags WHERE tags.title LIKE ?) ) ), all_notes_with_EXCLUSION_resources AS ( SELECT DISTINCT note_resources.note_id AS id FROM note_resources ), notes_with_EXCLUSION_resources AS ( SELECT * FROM ( SELECT * FROM all_notes_with_EXCLUSION_resources EXCEPT SELECT note_resources.note_id AS id FROM note_resources WHERE note_resources.is_associated=1 AND note_resources.resource_id IN ( SELECT resources.id FROM resources WHERE resources.mime LIKE ?) ) ) SELECT notes.id, notes.title, notes.user_created_time, notes.user_updated_time, notes.is_todo, notes.todo_completed, notes.parent_id FROM notes WHERE ROWID=-1 OR ( ROWID IN ( SELECT ROWID FROM notes WHERE id LIKE ? )) OR ROWID IN ( SELECT notes.ROWID FROM notes_with_EXCLUSION_tags JOIN notes ON notes_with_EXCLUSION_tags.id=notes.id ) OR ROWID IN ( SELECT notes.ROWID FROM notes_with_EXCLUSION_resources JOIN notes ON notes_with_EXCLUSION_resources.id=notes.id )",
+  },
+}
+`;
+
+exports[`queryBuilder should build query for any:1 id:abc notebook:nb1 tag:tag1 1`] = `
+{
+  "fts": {
+    "params": [
+      "abc",
+      "nb1",
+      "tag1",
+    ],
+    "query": "WITH RECURSIVE notebooks_in_scope(id) AS ( SELECT folders.id FROM folders WHERE id IN ( SELECT id FROM folders WHERE folders.title LIKE ? ) UNION ALL SELECT folders.id FROM folders JOIN notebooks_in_scope ON folders.parent_id=notebooks_in_scope.id ), notes_with_INCLUSION_tags AS ( SELECT note_tags.note_id as id FROM note_tags WHERE 0 UNION SELECT note_tags.note_id AS id FROM note_tags WHERE note_tags.tag_id IN ( SELECT tags.id FROM tags WHERE tags.title LIKE ?) ) SELECT notes_fts.id, notes_fts.title, offsets(notes_fts) AS offsets, matchinfo(notes_fts, 'pcnalx') AS matchinfo, notes_fts.user_created_time, notes_fts.user_updated_time, notes_fts.is_todo, notes_fts.todo_completed, notes_fts.parent_id FROM notes_fts WHERE 1 OR ( ROWID IN ( SELECT ROWID FROM notes_normalized WHERE id LIKE ? )) AND ROWID IN ( SELECT ROWID FROM notes_fts WHERE 1=0 AND ROWID IN ( SELECT notes_normalized.ROWID FROM notebooks_in_scope JOIN notes_normalized ON notebooks_in_scope.id=notes_normalized.parent_id ) OR ROWID IN ( SELECT notes_normalized.ROWID FROM notes_with_INCLUSION_tags JOIN notes_normalized ON notes_with_INCLUSION_tags.id=notes_normalized.id ))",
+  },
+  "noFts": {
+    "params": [
+      "abc",
+      "nb1",
+      "tag1",
+    ],
+    "query": "WITH RECURSIVE notebooks_in_scope(id) AS ( SELECT folders.id FROM folders WHERE id IN ( SELECT id FROM folders WHERE folders.title LIKE ? ) UNION ALL SELECT folders.id FROM folders JOIN notebooks_in_scope ON folders.parent_id=notebooks_in_scope.id ), notes_with_INCLUSION_tags AS ( SELECT note_tags.note_id as id FROM note_tags WHERE 0 UNION SELECT note_tags.note_id AS id FROM note_tags WHERE note_tags.tag_id IN ( SELECT tags.id FROM tags WHERE tags.title LIKE ?) ) SELECT notes.id, notes.title, notes.user_created_time, notes.user_updated_time, notes.is_todo, notes.todo_completed, notes.parent_id FROM notes WHERE 1 OR ( ROWID IN ( SELECT ROWID FROM notes WHERE id LIKE ? )) AND ROWID IN ( SELECT ROWID FROM notes_fts WHERE 1=0 AND ROWID IN ( SELECT notes.ROWID FROM notebooks_in_scope JOIN notes ON notebooks_in_scope.id=notes.parent_id ) OR ROWID IN ( SELECT notes.ROWID FROM notes_with_INCLUSION_tags JOIN notes ON notes_with_INCLUSION_tags.id=notes.id ))",
+  },
+}
+`;
+
+exports[`queryBuilder should build query for any:1 notebook:nb1 hello world 1`] = `
+{
+  "fts": {
+    "params": [
+      "nb1",
+      ""hello" OR "world"",
+    ],
+    "query": "WITH RECURSIVE notebooks_in_scope(id) AS ( SELECT folders.id FROM folders WHERE id IN ( SELECT id FROM folders WHERE folders.title LIKE ? ) UNION ALL SELECT folders.id FROM folders JOIN notebooks_in_scope ON folders.parent_id=notebooks_in_scope.id ) SELECT notes_fts.id, notes_fts.title, offsets(notes_fts) AS offsets, matchinfo(notes_fts, 'pcnalx') AS matchinfo, notes_fts.user_created_time, notes_fts.user_updated_time, notes_fts.is_todo, notes_fts.todo_completed, notes_fts.parent_id FROM notes_fts WHERE 1 AND ROWID IN ( SELECT notes_normalized.ROWID FROM notebooks_in_scope JOIN notes_normalized ON notebooks_in_scope.id=notes_normalized.parent_id ) AND ROWID IN ( SELECT ROWID FROM notes_fts WHERE 1=0 OR notes_fts MATCH ?)",
+  },
+  "noFts": {
+    "params": [
+      "nb1",
+      "%hello%",
+      "%hello%",
+      "%world%",
+      "%world%",
+    ],
+    "query": "WITH RECURSIVE notebooks_in_scope(id) AS ( SELECT folders.id FROM folders WHERE id IN ( SELECT id FROM folders WHERE folders.title LIKE ? ) UNION ALL SELECT folders.id FROM folders JOIN notebooks_in_scope ON folders.parent_id=notebooks_in_scope.id ) SELECT notes.id, notes.title, notes.user_created_time, notes.user_updated_time, notes.is_todo, notes.todo_completed, notes.parent_id FROM notes WHERE 1 AND ROWID IN ( SELECT notes.ROWID FROM notebooks_in_scope JOIN notes ON notebooks_in_scope.id=notes.parent_id ) AND ROWID IN ( SELECT ROWID FROM notes_fts WHERE 1=0 OR ( notes.body LIKE ? OR notes.title LIKE ? ) OR ( notes.body LIKE ? OR notes.title LIKE ? ))",
+  },
+}
+`;
+
+exports[`queryBuilder should build query for any:1 tag:t1 tag:t2 -tag:t3 1`] = `
+{
+  "fts": {
+    "params": [
+      "t1",
+      "t2",
+      "t3",
+    ],
+    "query": "WITH RECURSIVE notes_with_INCLUSION_tags AS ( SELECT note_tags.note_id as id FROM note_tags WHERE 0 UNION SELECT note_tags.note_id AS id FROM note_tags WHERE note_tags.tag_id IN ( SELECT tags.id FROM tags WHERE tags.title LIKE ?) UNION SELECT note_tags.note_id AS id FROM note_tags WHERE note_tags.tag_id IN ( SELECT tags.id FROM tags WHERE tags.title LIKE ?) ), all_notes_with_EXCLUSION_tags AS ( SELECT DISTINCT note_tags.note_id AS id FROM note_tags ), notes_with_EXCLUSION_tags AS ( SELECT * FROM ( SELECT * FROM all_notes_with_EXCLUSION_tags EXCEPT SELECT note_tags.note_id AS id FROM note_tags WHERE note_tags.tag_id IN ( SELECT tags.id FROM tags WHERE tags.title LIKE ?) ) ) SELECT notes_fts.id, notes_fts.title, offsets(notes_fts) AS offsets, matchinfo(notes_fts, 'pcnalx') AS matchinfo, notes_fts.user_created_time, notes_fts.user_updated_time, notes_fts.is_todo, notes_fts.todo_completed, notes_fts.parent_id FROM notes_fts WHERE ROWID=-1 OR ROWID IN ( SELECT notes_normalized.ROWID FROM notes_with_INCLUSION_tags JOIN notes_normalized ON notes_with_INCLUSION_tags.id=notes_normalized.id ) OR ROWID IN ( SELECT notes_normalized.ROWID FROM notes_with_EXCLUSION_tags JOIN notes_normalized ON notes_with_EXCLUSION_tags.id=notes_normalized.id )",
+  },
+  "noFts": {
+    "params": [
+      "t1",
+      "t2",
+      "t3",
+    ],
+    "query": "WITH RECURSIVE notes_with_INCLUSION_tags AS ( SELECT note_tags.note_id as id FROM note_tags WHERE 0 UNION SELECT note_tags.note_id AS id FROM note_tags WHERE note_tags.tag_id IN ( SELECT tags.id FROM tags WHERE tags.title LIKE ?) UNION SELECT note_tags.note_id AS id FROM note_tags WHERE note_tags.tag_id IN ( SELECT tags.id FROM tags WHERE tags.title LIKE ?) ), all_notes_with_EXCLUSION_tags AS ( SELECT DISTINCT note_tags.note_id AS id FROM note_tags ), notes_with_EXCLUSION_tags AS ( SELECT * FROM ( SELECT * FROM all_notes_with_EXCLUSION_tags EXCEPT SELECT note_tags.note_id AS id FROM note_tags WHERE note_tags.tag_id IN ( SELECT tags.id FROM tags WHERE tags.title LIKE ?) ) ) SELECT notes.id, notes.title, notes.user_created_time, notes.user_updated_time, notes.is_todo, notes.todo_completed, notes.parent_id FROM notes WHERE ROWID=-1 OR ROWID IN ( SELECT notes.ROWID FROM notes_with_INCLUSION_tags JOIN notes ON notes_with_INCLUSION_tags.id=notes.id ) OR ROWID IN ( SELECT notes.ROWID FROM notes_with_EXCLUSION_tags JOIN notes ON notes_with_EXCLUSION_tags.id=notes.id )",
+  },
+}
+`;
+
+exports[`queryBuilder should build query for any:1 title:hello body:world 1`] = `
+{
+  "fts": {
+    "params": [
+      "title:hello OR body:world",
+    ],
+    "query": "SELECT notes_fts.id, notes_fts.title, offsets(notes_fts) AS offsets, matchinfo(notes_fts, 'pcnalx') AS matchinfo, notes_fts.user_created_time, notes_fts.user_updated_time, notes_fts.is_todo, notes_fts.todo_completed, notes_fts.parent_id FROM notes_fts WHERE ROWID=-1 OR notes_fts MATCH ?",
+  },
+  "noFts": {
+    "params": [
+      "%hello%",
+      "%world%",
+    ],
+    "query": "SELECT notes.id, notes.title, notes.user_created_time, notes.user_updated_time, notes.is_todo, notes.todo_completed, notes.parent_id FROM notes WHERE ROWID=-1 OR ( notes.title LIKE ? ) OR ( notes.body LIKE ? )",
+  },
+}
+`;
+
+exports[`queryBuilder should build query for any:1 type:note iscompleted:0 1`] = `
+{
+  "fts": {
+    "params": [],
+    "query": "SELECT notes_fts.id, notes_fts.title, offsets(notes_fts) AS offsets, matchinfo(notes_fts, 'pcnalx') AS matchinfo, notes_fts.user_created_time, notes_fts.user_updated_time, notes_fts.is_todo, notes_fts.todo_completed, notes_fts.parent_id FROM notes_fts WHERE ROWID=-1 OR ROWID IN ( SELECT ROWID FROM notes_normalized WHERE notes_normalized.is_todo IS 0 ) OR ROWID IN ( SELECT ROWID FROM notes_normalized WHERE notes_normalized.is_todo IS 1 AND notes_normalized.todo_completed IS 0 )",
+  },
+  "noFts": {
+    "params": [],
+    "query": "SELECT notes.id, notes.title, notes.user_created_time, notes.user_updated_time, notes.is_todo, notes.todo_completed, notes.parent_id FROM notes WHERE ROWID=-1 OR notes.is_todo IS 0 OR notes.is_todo IS 1 AND notes.todo_completed IS 0",
+  },
+}
+`;
+
+exports[`queryBuilder should build query for created:20200101 -updated:202001 due:2020 1`] = `
+{
+  "fts": {
+    "params": [
+      "<timestamp>",
+      "<timestamp>",
+      "<timestamp>",
+    ],
+    "query": "SELECT notes_fts.id, notes_fts.title, offsets(notes_fts) AS offsets, matchinfo(notes_fts, 'pcnalx') AS matchinfo, notes_fts.user_created_time, notes_fts.user_updated_time, notes_fts.is_todo, notes_fts.todo_completed, notes_fts.parent_id FROM notes_fts WHERE 1 AND ( ROWID IN ( SELECT ROWID FROM notes_normalized WHERE notes_normalized.user_created_time >= ? )) AND ( ROWID IN ( SELECT ROWID FROM notes_normalized WHERE notes_normalized.user_updated_time < ? )) AND ( is_todo IS 1 AND ROWID IN ( SELECT ROWID FROM notes_normalized WHERE todo_due >= ? ))",
+  },
+  "noFts": {
+    "params": [
+      "<timestamp>",
+      "<timestamp>",
+      "<timestamp>",
+    ],
+    "query": "SELECT notes.id, notes.title, notes.user_created_time, notes.user_updated_time, notes.is_todo, notes.todo_completed, notes.parent_id FROM notes WHERE 1 AND ( ROWID IN ( SELECT ROWID FROM notes WHERE notes.user_created_time >= ? )) AND ( ROWID IN ( SELECT ROWID FROM notes WHERE notes.user_updated_time < ? )) AND ( is_todo IS 1 AND ROWID IN ( SELECT ROWID FROM notes WHERE todo_due >= ? ))",
+  },
+}
+`;
+
+exports[`queryBuilder should build query for hel* "exact phrase" -excluded 1`] = `
+{
+  "fts": {
+    "params": [
+      ""hel*" "exact phrase"",
+      ""excluded"",
+    ],
+    "query": "SELECT notes_fts.id, notes_fts.title, offsets(notes_fts) AS offsets, matchinfo(notes_fts, 'pcnalx') AS matchinfo, notes_fts.user_created_time, notes_fts.user_updated_time, notes_fts.is_todo, notes_fts.todo_completed, notes_fts.parent_id FROM notes_fts WHERE 1 AND notes_fts MATCH ? AND ROWID NOT IN ( SELECT ROWID FROM notes_fts WHERE notes_fts MATCH ? )",
+  },
+  "noFts": {
+    "params": [
+      "%hel%%",
+      "%hel%%",
+      "%exact phrase%",
+      "%exact phrase%",
+      "%excluded%",
+      "%excluded%",
+    ],
+    "query": "SELECT notes.id, notes.title, notes.user_created_time, notes.user_updated_time, notes.is_todo, notes.todo_completed, notes.parent_id FROM notes WHERE 1 AND ( notes.body LIKE ? OR notes.title LIKE ? ) AND ( notes.body LIKE ? OR notes.title LIKE ? ) AND NOT ( notes.body LIKE ? OR notes.title LIKE ? )",
+  },
+}
+`;
+
+exports[`queryBuilder should build query for id:abc notebook:nb1 1`] = `
+{
+  "fts": {
+    "params": [
+      "abc",
+      "nb1",
+    ],
+    "query": "WITH RECURSIVE notebooks_in_scope(id) AS ( SELECT folders.id FROM folders WHERE id IN ( SELECT id FROM folders WHERE folders.title LIKE ? ) UNION ALL SELECT folders.id FROM folders JOIN notebooks_in_scope ON folders.parent_id=notebooks_in_scope.id ) SELECT notes_fts.id, notes_fts.title, offsets(notes_fts) AS offsets, matchinfo(notes_fts, 'pcnalx') AS matchinfo, notes_fts.user_created_time, notes_fts.user_updated_time, notes_fts.is_todo, notes_fts.todo_completed, notes_fts.parent_id FROM notes_fts WHERE 1 AND ( ROWID IN ( SELECT ROWID FROM notes_normalized WHERE id LIKE ? )) AND ROWID IN ( SELECT notes_normalized.ROWID FROM notebooks_in_scope JOIN notes_normalized ON notebooks_in_scope.id=notes_normalized.parent_id )",
+  },
+  "noFts": {
+    "params": [
+      "abc",
+      "nb1",
+    ],
+    "query": "WITH RECURSIVE notebooks_in_scope(id) AS ( SELECT folders.id FROM folders WHERE id IN ( SELECT id FROM folders WHERE folders.title LIKE ? ) UNION ALL SELECT folders.id FROM folders JOIN notebooks_in_scope ON folders.parent_id=notebooks_in_scope.id ) SELECT notes.id, notes.title, notes.user_created_time, notes.user_updated_time, notes.is_todo, notes.todo_completed, notes.parent_id FROM notes WHERE 1 AND ( ROWID IN ( SELECT ROWID FROM notes WHERE id LIKE ? )) AND ROWID IN ( SELECT notes.ROWID FROM notebooks_in_scope JOIN notes ON notebooks_in_scope.id=notes.parent_id )",
+  },
+}
+`;
+
+exports[`queryBuilder should build query for id:abc notebook:nb1 tag:tag1 resource:image/* 1`] = `
+{
+  "fts": {
+    "params": [
+      "abc",
+      "nb1",
+      "tag1",
+      "image/%",
+    ],
+    "query": "WITH RECURSIVE notebooks_in_scope(id) AS ( SELECT folders.id FROM folders WHERE id IN ( SELECT id FROM folders WHERE folders.title LIKE ? ) UNION ALL SELECT folders.id FROM folders JOIN notebooks_in_scope ON folders.parent_id=notebooks_in_scope.id ), notes_with_INCLUSION_tags AS ( SELECT note_tags.note_id as id FROM note_tags WHERE 1 INTERSECT SELECT note_tags.note_id AS id FROM note_tags WHERE note_tags.tag_id IN ( SELECT tags.id FROM tags WHERE tags.title LIKE ?) ), notes_with_INCLUSION_resources AS ( SELECT note_resources.note_id as id FROM note_resources WHERE 1 INTERSECT SELECT note_resources.note_id AS id FROM note_resources WHERE note_resources.is_associated=1 AND note_resources.resource_id IN ( SELECT resources.id FROM resources WHERE resources.mime LIKE ?) ) SELECT notes_fts.id, notes_fts.title, offsets(notes_fts) AS offsets, matchinfo(notes_fts, 'pcnalx') AS matchinfo, notes_fts.user_created_time, notes_fts.user_updated_time, notes_fts.is_todo, notes_fts.todo_completed, notes_fts.parent_id FROM notes_fts WHERE 1 AND ( ROWID IN ( SELECT ROWID FROM notes_normalized WHERE id LIKE ? )) AND ROWID IN ( SELECT notes_normalized.ROWID FROM notebooks_in_scope JOIN notes_normalized ON notebooks_in_scope.id=notes_normalized.parent_id ) AND ROWID IN ( SELECT notes_normalized.ROWID FROM notes_with_INCLUSION_tags JOIN notes_normalized ON notes_with_INCLUSION_tags.id=notes_normalized.id ) AND ROWID IN ( SELECT notes_normalized.ROWID FROM notes_with_INCLUSION_resources JOIN notes_normalized ON notes_with_INCLUSION_resources.id=notes_normalized.id )",
+  },
+  "noFts": {
+    "params": [
+      "abc",
+      "nb1",
+      "tag1",
+      "image/%",
+    ],
+    "query": "WITH RECURSIVE notebooks_in_scope(id) AS ( SELECT folders.id FROM folders WHERE id IN ( SELECT id FROM folders WHERE folders.title LIKE ? ) UNION ALL SELECT folders.id FROM folders JOIN notebooks_in_scope ON folders.parent_id=notebooks_in_scope.id ), notes_with_INCLUSION_tags AS ( SELECT note_tags.note_id as id FROM note_tags WHERE 1 INTERSECT SELECT note_tags.note_id AS id FROM note_tags WHERE note_tags.tag_id IN ( SELECT tags.id FROM tags WHERE tags.title LIKE ?) ), notes_with_INCLUSION_resources AS ( SELECT note_resources.note_id as id FROM note_resources WHERE 1 INTERSECT SELECT note_resources.note_id AS id FROM note_resources WHERE note_resources.is_associated=1 AND note_resources.resource_id IN ( SELECT resources.id FROM resources WHERE resources.mime LIKE ?) ) SELECT notes.id, notes.title, notes.user_created_time, notes.user_updated_time, notes.is_todo, notes.todo_completed, notes.parent_id FROM notes WHERE 1 AND ( ROWID IN ( SELECT ROWID FROM notes WHERE id LIKE ? )) AND ROWID IN ( SELECT notes.ROWID FROM notebooks_in_scope JOIN notes ON notebooks_in_scope.id=notes.parent_id ) AND ROWID IN ( SELECT notes.ROWID FROM notes_with_INCLUSION_tags JOIN notes ON notes_with_INCLUSION_tags.id=notes.id ) AND ROWID IN ( SELECT notes.ROWID FROM notes_with_INCLUSION_resources JOIN notes ON notes_with_INCLUSION_resources.id=notes.id )",
+  },
+}
+`;
+
+exports[`queryBuilder should build query for id:abc resource:image/png 1`] = `
+{
+  "fts": {
+    "params": [
+      "abc",
+      "image/png",
+    ],
+    "query": "WITH RECURSIVE notes_with_INCLUSION_resources AS ( SELECT note_resources.note_id as id FROM note_resources WHERE 1 INTERSECT SELECT note_resources.note_id AS id FROM note_resources WHERE note_resources.is_associated=1 AND note_resources.resource_id IN ( SELECT resources.id FROM resources WHERE resources.mime LIKE ?) ) SELECT notes_fts.id, notes_fts.title, offsets(notes_fts) AS offsets, matchinfo(notes_fts, 'pcnalx') AS matchinfo, notes_fts.user_created_time, notes_fts.user_updated_time, notes_fts.is_todo, notes_fts.todo_completed, notes_fts.parent_id FROM notes_fts WHERE 1 AND ( ROWID IN ( SELECT ROWID FROM notes_normalized WHERE id LIKE ? )) AND ROWID IN ( SELECT notes_normalized.ROWID FROM notes_with_INCLUSION_resources JOIN notes_normalized ON notes_with_INCLUSION_resources.id=notes_normalized.id )",
+  },
+  "noFts": {
+    "params": [
+      "abc",
+      "image/png",
+    ],
+    "query": "WITH RECURSIVE notes_with_INCLUSION_resources AS ( SELECT note_resources.note_id as id FROM note_resources WHERE 1 INTERSECT SELECT note_resources.note_id AS id FROM note_resources WHERE note_resources.is_associated=1 AND note_resources.resource_id IN ( SELECT resources.id FROM resources WHERE resources.mime LIKE ?) ) SELECT notes.id, notes.title, notes.user_created_time, notes.user_updated_time, notes.is_todo, notes.todo_completed, notes.parent_id FROM notes WHERE 1 AND ( ROWID IN ( SELECT ROWID FROM notes WHERE id LIKE ? )) AND ROWID IN ( SELECT notes.ROWID FROM notes_with_INCLUSION_resources JOIN notes ON notes_with_INCLUSION_resources.id=notes.id )",
+  },
+}
+`;
+
+exports[`queryBuilder should build query for id:abc tag:tag1 1`] = `
+{
+  "fts": {
+    "params": [
+      "abc",
+      "tag1",
+    ],
+    "query": "WITH RECURSIVE notes_with_INCLUSION_tags AS ( SELECT note_tags.note_id as id FROM note_tags WHERE 1 INTERSECT SELECT note_tags.note_id AS id FROM note_tags WHERE note_tags.tag_id IN ( SELECT tags.id FROM tags WHERE tags.title LIKE ?) ) SELECT notes_fts.id, notes_fts.title, offsets(notes_fts) AS offsets, matchinfo(notes_fts, 'pcnalx') AS matchinfo, notes_fts.user_created_time, notes_fts.user_updated_time, notes_fts.is_todo, notes_fts.todo_completed, notes_fts.parent_id FROM notes_fts WHERE 1 AND ( ROWID IN ( SELECT ROWID FROM notes_normalized WHERE id LIKE ? )) AND ROWID IN ( SELECT notes_normalized.ROWID FROM notes_with_INCLUSION_tags JOIN notes_normalized ON notes_with_INCLUSION_tags.id=notes_normalized.id )",
+  },
+  "noFts": {
+    "params": [
+      "abc",
+      "tag1",
+    ],
+    "query": "WITH RECURSIVE notes_with_INCLUSION_tags AS ( SELECT note_tags.note_id as id FROM note_tags WHERE 1 INTERSECT SELECT note_tags.note_id AS id FROM note_tags WHERE note_tags.tag_id IN ( SELECT tags.id FROM tags WHERE tags.title LIKE ?) ) SELECT notes.id, notes.title, notes.user_created_time, notes.user_updated_time, notes.is_todo, notes.todo_completed, notes.parent_id FROM notes WHERE 1 AND ( ROWID IN ( SELECT ROWID FROM notes WHERE id LIKE ? )) AND ROWID IN ( SELECT notes.ROWID FROM notes_with_INCLUSION_tags JOIN notes ON notes_with_INCLUSION_tags.id=notes.id )",
+  },
+}
+`;
+
+exports[`queryBuilder should build query for latitude:10 -longitude:20 altitude:30 1`] = `
+{
+  "fts": {
+    "params": [
+      "10",
+      "20",
+      "30",
+    ],
+    "query": "SELECT notes_fts.id, notes_fts.title, offsets(notes_fts) AS offsets, matchinfo(notes_fts, 'pcnalx') AS matchinfo, notes_fts.user_created_time, notes_fts.user_updated_time, notes_fts.is_todo, notes_fts.todo_completed, notes_fts.parent_id FROM notes_fts WHERE 1 AND ( ROWID IN ( SELECT ROWID FROM notes_normalized WHERE notes_normalized.latitude >= ? )) AND ( ROWID IN ( SELECT ROWID FROM notes_normalized WHERE notes_normalized.longitude < ? )) AND ( ROWID IN ( SELECT ROWID FROM notes_normalized WHERE notes_normalized.altitude >= ? ))",
+  },
+  "noFts": {
+    "params": [
+      "10",
+      "20",
+      "30",
+    ],
+    "query": "SELECT notes.id, notes.title, notes.user_created_time, notes.user_updated_time, notes.is_todo, notes.todo_completed, notes.parent_id FROM notes WHERE 1 AND ( ROWID IN ( SELECT ROWID FROM notes WHERE notes.latitude >= ? )) AND ( ROWID IN ( SELECT ROWID FROM notes WHERE notes.longitude < ? )) AND ( ROWID IN ( SELECT ROWID FROM notes WHERE notes.altitude >= ? ))",
+  },
+}
+`;
+
+exports[`queryBuilder should build query for notebook:nb1 notebook:nb2 -notebook:nb3 hello 1`] = `
+{
+  "fts": {
+    "params": [
+      "nb1",
+      "nb2",
+      "nb3",
+      ""hello"",
+    ],
+    "query": "WITH RECURSIVE notebooks_in_scope(id) AS ( SELECT folders.id FROM folders WHERE id IN ( SELECT id FROM folders WHERE folders.title LIKE ? OR folders.title LIKE ? ) UNION ALL SELECT folders.id FROM folders JOIN notebooks_in_scope ON folders.parent_id=notebooks_in_scope.id ), notebooks_not_in_scope(id) AS ( SELECT folders.id FROM folders WHERE id IN ( SELECT id FROM folders WHERE folders.title LIKE ? ) UNION ALL SELECT folders.id FROM folders JOIN notebooks_not_in_scope ON folders.parent_id=notebooks_not_in_scope.id ) SELECT notes_fts.id, notes_fts.title, offsets(notes_fts) AS offsets, matchinfo(notes_fts, 'pcnalx') AS matchinfo, notes_fts.user_created_time, notes_fts.user_updated_time, notes_fts.is_todo, notes_fts.todo_completed, notes_fts.parent_id FROM notes_fts WHERE 1 AND ROWID IN ( SELECT notes_normalized.ROWID FROM notebooks_in_scope JOIN notes_normalized ON notebooks_in_scope.id=notes_normalized.parent_id ) AND ROWID NOT IN ( SELECT notes_normalized.ROWID FROM notebooks_not_in_scope JOIN notes_normalized ON notebooks_not_in_scope.id=notes_normalized.parent_id ) AND notes_fts MATCH ?",
+  },
+  "noFts": {
+    "params": [
+      "nb1",
+      "nb2",
+      "nb3",
+      "%hello%",
+      "%hello%",
+    ],
+    "query": "WITH RECURSIVE notebooks_in_scope(id) AS ( SELECT folders.id FROM folders WHERE id IN ( SELECT id FROM folders WHERE folders.title LIKE ? OR folders.title LIKE ? ) UNION ALL SELECT folders.id FROM folders JOIN notebooks_in_scope ON folders.parent_id=notebooks_in_scope.id ), notebooks_not_in_scope(id) AS ( SELECT folders.id FROM folders WHERE id IN ( SELECT id FROM folders WHERE folders.title LIKE ? ) UNION ALL SELECT folders.id FROM folders JOIN notebooks_not_in_scope ON folders.parent_id=notebooks_not_in_scope.id ) SELECT notes.id, notes.title, notes.user_created_time, notes.user_updated_time, notes.is_todo, notes.todo_completed, notes.parent_id FROM notes WHERE 1 AND ROWID IN ( SELECT notes.ROWID FROM notebooks_in_scope JOIN notes ON notebooks_in_scope.id=notes.parent_id ) AND ROWID NOT IN ( SELECT notes.ROWID FROM notebooks_not_in_scope JOIN notes ON notebooks_not_in_scope.id=notes.parent_id ) AND ( notes.body LIKE ? OR notes.title LIKE ? )",
+  },
+}
+`;
+
+exports[`queryBuilder should build query for sourceurl:https://example.com/* -sourceurl:*.org 1`] = `
+{
+  "fts": {
+    "params": [
+      "https://example.com/%",
+      "%.org",
+    ],
+    "query": "SELECT notes_fts.id, notes_fts.title, offsets(notes_fts) AS offsets, matchinfo(notes_fts, 'pcnalx') AS matchinfo, notes_fts.user_created_time, notes_fts.user_updated_time, notes_fts.is_todo, notes_fts.todo_completed, notes_fts.parent_id FROM notes_fts WHERE 1 AND ( ROWID IN ( SELECT ROWID FROM notes_normalized WHERE notes_normalized.source_url LIKE ? )) AND ( ROWID IN ( SELECT ROWID FROM notes_normalized WHERE notes_normalized.source_url NOT LIKE ? ))",
+  },
+  "noFts": {
+    "params": [
+      "https://example.com/%",
+      "%.org",
+    ],
+    "query": "SELECT notes.id, notes.title, notes.user_created_time, notes.user_updated_time, notes.is_todo, notes.todo_completed, notes.parent_id FROM notes WHERE 1 AND ( ROWID IN ( SELECT ROWID FROM notes WHERE notes.source_url LIKE ? )) AND ( ROWID IN ( SELECT ROWID FROM notes WHERE notes.source_url NOT LIKE ? ))",
+  },
+}
+`;
+
+exports[`queryBuilder should build query for tag:t1 tag:t2 -tag:t3 1`] = `
+{
+  "fts": {
+    "params": [
+      "t1",
+      "t2",
+      "t3",
+    ],
+    "query": "WITH RECURSIVE notes_with_INCLUSION_tags AS ( SELECT note_tags.note_id as id FROM note_tags WHERE 1 INTERSECT SELECT note_tags.note_id AS id FROM note_tags WHERE note_tags.tag_id IN ( SELECT tags.id FROM tags WHERE tags.title LIKE ?) INTERSECT SELECT note_tags.note_id AS id FROM note_tags WHERE note_tags.tag_id IN ( SELECT tags.id FROM tags WHERE tags.title LIKE ?) ), notes_with_EXCLUSION_tags AS ( SELECT note_tags.note_id as id FROM note_tags WHERE 0 UNION SELECT note_tags.note_id AS id FROM note_tags WHERE note_tags.tag_id IN ( SELECT tags.id FROM tags WHERE tags.title LIKE ?) ) SELECT notes_fts.id, notes_fts.title, offsets(notes_fts) AS offsets, matchinfo(notes_fts, 'pcnalx') AS matchinfo, notes_fts.user_created_time, notes_fts.user_updated_time, notes_fts.is_todo, notes_fts.todo_completed, notes_fts.parent_id FROM notes_fts WHERE 1 AND ROWID IN ( SELECT notes_normalized.ROWID FROM notes_with_INCLUSION_tags JOIN notes_normalized ON notes_with_INCLUSION_tags.id=notes_normalized.id ) AND ROWID NOT IN ( SELECT notes_normalized.ROWID FROM notes_with_EXCLUSION_tags JOIN notes_normalized ON notes_with_EXCLUSION_tags.id=notes_normalized.id )",
+  },
+  "noFts": {
+    "params": [
+      "t1",
+      "t2",
+      "t3",
+    ],
+    "query": "WITH RECURSIVE notes_with_INCLUSION_tags AS ( SELECT note_tags.note_id as id FROM note_tags WHERE 1 INTERSECT SELECT note_tags.note_id AS id FROM note_tags WHERE note_tags.tag_id IN ( SELECT tags.id FROM tags WHERE tags.title LIKE ?) INTERSECT SELECT note_tags.note_id AS id FROM note_tags WHERE note_tags.tag_id IN ( SELECT tags.id FROM tags WHERE tags.title LIKE ?) ), notes_with_EXCLUSION_tags AS ( SELECT note_tags.note_id as id FROM note_tags WHERE 0 UNION SELECT note_tags.note_id AS id FROM note_tags WHERE note_tags.tag_id IN ( SELECT tags.id FROM tags WHERE tags.title LIKE ?) ) SELECT notes.id, notes.title, notes.user_created_time, notes.user_updated_time, notes.is_todo, notes.todo_completed, notes.parent_id FROM notes WHERE 1 AND ROWID IN ( SELECT notes.ROWID FROM notes_with_INCLUSION_tags JOIN notes ON notes_with_INCLUSION_tags.id=notes.id ) AND ROWID NOT IN ( SELECT notes.ROWID FROM notes_with_EXCLUSION_tags JOIN notes ON notes_with_EXCLUSION_tags.id=notes.id )",
+  },
+}
+`;
+
+exports[`queryBuilder should build query for title:hello body:world* -title:bye 1`] = `
+{
+  "fts": {
+    "params": [
+      "title:hello body:world*",
+      "bye",
+    ],
+    "query": "SELECT notes_fts.id, notes_fts.title, offsets(notes_fts) AS offsets, matchinfo(notes_fts, 'pcnalx') AS matchinfo, notes_fts.user_created_time, notes_fts.user_updated_time, notes_fts.is_todo, notes_fts.todo_completed, notes_fts.parent_id FROM notes_fts WHERE 1 AND notes_fts MATCH ? AND ROWID NOT IN ( SELECT ROWID FROM notes_fts WHERE notes_fts.title MATCH ? )",
+  },
+  "noFts": {
+    "params": [
+      "%hello%",
+      "%world%%",
+      "%bye%",
+    ],
+    "query": "SELECT notes.id, notes.title, notes.user_created_time, notes.user_updated_time, notes.is_todo, notes.todo_completed, notes.parent_id FROM notes WHERE 1 AND ( notes.title LIKE ? ) AND ( notes.body LIKE ? ) AND NOT ( notes.title LIKE ? )",
+  },
+}
+`;
+
+exports[`queryBuilder should build query for type:todo iscompleted:1 1`] = `
+{
+  "fts": {
+    "params": [],
+    "query": "SELECT notes_fts.id, notes_fts.title, offsets(notes_fts) AS offsets, matchinfo(notes_fts, 'pcnalx') AS matchinfo, notes_fts.user_created_time, notes_fts.user_updated_time, notes_fts.is_todo, notes_fts.todo_completed, notes_fts.parent_id FROM notes_fts WHERE 1 AND notes_fts.is_todo IS 1 AND notes_fts.is_todo IS 1 AND notes_fts.todo_completed IS NOT 0",
+  },
+  "noFts": {
+    "params": [],
+    "query": "SELECT notes.id, notes.title, notes.user_created_time, notes.user_updated_time, notes.is_todo, notes.todo_completed, notes.parent_id FROM notes WHERE 1 AND notes.is_todo IS 1 AND notes.is_todo IS 1 AND notes.todo_completed IS NOT 0",
+  },
+}
+`;

@@ -9,6 +9,7 @@ import ResourceFetcher from './ResourceFetcher';
 import Resource from '../models/Resource';
 import { _, _n } from '../locale';
 import { toTitleCase } from '../string-utils';
+import { kysely, toSqlQuery } from './database/kysely';
 
 enum CanRetryType {
 	E2EE = 'e2ee',
@@ -94,7 +95,12 @@ export default class ReportService {
 		for (let i = 0; i < itemTypes.length; i++) {
 			const itemType = itemTypes[i];
 			const ItemClass = BaseItem.getClassByItemType(itemType);
-			const items = await ItemClass.modelSelectAll(`SELECT items.id, items.updated_time, sync_items.sync_time FROM ${ItemClass.tableName()} items JOIN sync_items ON sync_items.item_id = items.id`);
+			// Typed as notes only so the builder can type-check: every sync item table has id and updated_time
+			const tableName = ItemClass.tableName() as 'notes';
+			const items = await ItemClass.modelSelectAll(toSqlQuery(kysely
+				.selectFrom(`${tableName} as items`)
+				.innerJoin('sync_items', 'sync_items.item_id', 'items.id')
+				.select(['items.id', 'items.updated_time', 'sync_items.sync_time'])));
 
 			for (let j = 0; j < items.length; j++) {
 				const item = items[j];
