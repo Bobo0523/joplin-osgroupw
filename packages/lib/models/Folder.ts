@@ -23,6 +23,8 @@ import { itemIsReadOnlySync, ItemSlice } from './utils/readOnly';
 import ItemChange from './ItemChange';
 import { substrWithEllipsis } from '../string-utils';
 import { unique } from '../ArrayUtils';
+import { dynamicKysely, kysely, selectFrom } from '../services/database/kysely';
+import { literalList } from '../services/database/sqlFragments';
 
 const logger = Logger.create('models/Folder');
 
@@ -65,16 +67,16 @@ export default class Folder extends BaseItem {
 			...options,
 		};
 
-		const where = ['parent_id = ?'];
+		let query = selectFrom('notes', options.fields ? options.fields : '*').where('parent_id', '=', parentId);
 		if (!options.includeConflicts) {
-			where.push('is_conflict = 0');
+			query = query.where('is_conflict', '=', 0);
 		}
 
 		if (!options.includeDeleted) {
-			where.push('deleted_time = 0');
+			query = query.where('deleted_time', '=', 0);
 		}
 
-		return this.modelSelectAll(`SELECT ${this.selectFields(options)} FROM notes WHERE ${where.join(' AND ')}`, [parentId]);
+		return this.modelSelectAll(query);
 	}
 
 	public static async noteIds(parentId: string, options: LoadOptions = null) {
@@ -86,12 +88,12 @@ export default class Folder extends BaseItem {
 	}
 
 	public static async subFolderIds(parentId: string) {
-		const rows = await this.db().selectAll('SELECT id FROM folders WHERE parent_id = ?', [parentId]);
+		const rows = await this.db().selectAll(kysely.selectFrom('folders').select('id').where('parent_id', '=', parentId));
 		return rows.map((r: FolderEntity) => r.id);
 	}
 
 	public static async noteCount(parentId: string) {
-		const r = await this.db().selectOne('SELECT count(*) as total FROM notes WHERE is_conflict = 0 AND parent_id = ?', [parentId]);
+		const r = await this.db().selectOne(kysely.selectFrom('notes').select(eb => eb.fn.countAll().as('total')).where('is_conflict', '=', 0).where('parent_id', '=', parentId));
 		return r ? r.total : 0;
 	}
 
@@ -99,10 +101,11 @@ export default class Folder extends BaseItem {
 	// and conflicts). Folders with zero notes are omitted from the map.
 	public static async noteCountsByFolderId() {
 		const rows = await this.db().selectAll<{ parent_id: string; total: number }>(
-			`SELECT parent_id, count(*) as total
-			 FROM notes
-			 WHERE is_conflict = 0 AND (deleted_time IS NULL OR deleted_time = 0)
-			 GROUP BY parent_id`,
+			kysely.selectFrom('notes')
+				.select(eb => ['parent_id', eb.fn.countAll().as('total')])
+				.where('is_conflict', '=', 0)
+				.where(eb => eb.or([eb('deleted_time', 'is', null), eb('deleted_time', '=', 0)]))
+				.groupBy('parent_id'),
 		);
 		const counts: Record<string, number> = {};
 		for (const r of rows) counts[r.parent_id] = r.total;
@@ -128,7 +131,7 @@ export default class Folder extends BaseItem {
 
 		for (const tableName of ['folders', 'notes', 'resources']) {
 			const ItemClass = tableNameToClasses[tableName];
-			const rows = await this.db().selectAll(`SELECT id FROM ${tableName} WHERE share_id = ?`, [shareId]);
+			const rows = await this.db().selectAll(selectFrom(tableName, ['id']).where('share_id', '=', shareId));
 			const ids: string[] = rows.map(r => r.id);
 			await ItemClass.batchDelete(ids, deleteOptions);
 		}
@@ -254,25 +257,20 @@ export default class Folder extends BaseItem {
 			}
 		}
 
-		const where = [
-			'is_conflict = 0',
-			'notes.deleted_time = 0',
-		];
-		if (!includeCompletedTodos) where.push('(notes.is_todo = 0 OR notes.todo_completed = 0)');
-
-		const sql = `
-			SELECT folders.id as folder_id, count(notes.parent_id) as note_count 
-			FROM folders LEFT JOIN notes ON notes.parent_id = folders.id
-			WHERE ${where.join(' AND ')}
-			GROUP BY folders.id
-		`;
+		let query = kysely.selectFrom('folders')
+			.leftJoin('notes', 'notes.parent_id', 'folders.id')
+			.select(eb => ['folders.id as folder_id', eb.fn.count('notes.parent_id').as('note_count')])
+			.where('is_conflict', '=', 0)
+			.where('notes.deleted_time', '=', 0);
+		if (!includeCompletedTodos) query = query.where(eb => eb.or([eb('notes.is_todo', '=', 0), eb('notes.todo_completed', '=', 0)]));
+		query = query.groupBy('folders.id');
 
 		interface NoteCount {
 			folder_id: string;
 			note_count: number;
 		}
 
-		const noteCounts: NoteCount[] = await this.db().selectAll(sql);
+		const noteCounts: NoteCount[] = await this.db().selectAll(query);
 		for (const noteCount of noteCounts) {
 			let parentId = noteCount.folder_id;
 
@@ -306,8 +304,12 @@ export default class Folder extends BaseItem {
 	// The remaining folders, that don't contain any notes are sorted by their own user_updated_time
 	public static async orderByLastModified(folders: FolderEntity[], dir = 'DESC') {
 		dir = dir.toUpperCase();
-		const sql = 'select parent_id, max(user_updated_time) content_updated_time from notes where parent_id != \'\' group by parent_id';
-		const rows = await this.db().selectAll(sql);
+		const rows = await this.db().selectAll(
+			kysely.selectFrom('notes')
+				.select(eb => ['parent_id', eb.fn.max('user_updated_time').as('content_updated_time')])
+				.where('parent_id', '!=', '')
+				.groupBy('parent_id'),
+		);
 
 		const folderIdToTime: Record<string, number> = {};
 		for (let i = 0; i < rows.length; i++) {
@@ -394,13 +396,13 @@ export default class Folder extends BaseItem {
 	public static async childrenIds(folderId: string, options: LoadOptions = null) {
 		options = { ...options };
 
-		const where = ['parent_id = ?'];
+		let query = kysely.selectFrom('folders').select('id').where('parent_id', '=', folderId);
 
 		if (!options.includeDeleted) {
-			where.push('deleted_time = 0');
+			query = query.where('deleted_time', '=', 0);
 		}
 
-		const folders = await this.db().selectAll(`SELECT id FROM folders WHERE ${where.join(' AND ')}`, [folderId]);
+		const folders = await this.db().selectAll(query);
 
 		let output: string[] = [];
 
@@ -428,29 +430,27 @@ export default class Folder extends BaseItem {
 	}
 
 	public static async allChildrenFolders(folderId: string): Promise<FolderEntity[]> {
-		const sql = `
-			WITH RECURSIVE
-				folders_cte(id, parent_id, share_id) AS (
-					SELECT id, parent_id, share_id
-						FROM folders
-						WHERE parent_id = ?
-					UNION ALL
-						SELECT folders.id, folders.parent_id, folders.share_id
-							FROM folders
-							INNER JOIN folders_cte AS folders_cte ON (folders.parent_id = folders_cte.id)
-				)
-				SELECT id, parent_id, share_id FROM folders_cte;
-		`;
+		const query = dynamicKysely
+			.withRecursive('folders_cte(id, parent_id, share_id)', db => db
+				.selectFrom('folders')
+				.select(['id', 'parent_id', 'share_id'])
+				.where('parent_id', '=', folderId)
+				.unionAll(db
+					.selectFrom('folders')
+					.innerJoin('folders_cte as folders_cte', 'folders.parent_id', 'folders_cte.id')
+					.select(['folders.id', 'folders.parent_id', 'folders.share_id'])))
+			.selectFrom('folders_cte')
+			.select(['id', 'parent_id', 'share_id']);
 
-		return this.db().selectAll(sql, [folderId]);
+		return this.db().selectAll(query);
 	}
 
 	public static async rootSharedFolders(activeShares: StateShare[]): Promise<FolderEntity[]> {
-		return this.removeDuplicateRootFolders(await this.db().selectAll('SELECT id, share_id FROM folders WHERE parent_id = \'\' AND share_id != \'\''), activeShares);
+		return this.removeDuplicateRootFolders(await this.db().selectAll(kysely.selectFrom('folders').select(['id', 'share_id']).where('parent_id', '=', '').where('share_id', '!=', '')), activeShares);
 	}
 
 	public static async rootShareFoldersByKeyId(keyId: string): Promise<FolderEntity[]> {
-		return this.db().selectAll('SELECT id, share_id FROM folders WHERE master_key_id = ?', [keyId]);
+		return this.db().selectAll(kysely.selectFrom('folders').select(['id', 'share_id']).where('master_key_id', '=', keyId));
 	}
 
 	// We need this function for this situation:
@@ -545,12 +545,12 @@ export default class Folder extends BaseItem {
 		// if they've been moved out of a shared folder.
 		// await this.unshareItems(ModelType.Folder, sharedFolderIds);
 
-		const sql = ['SELECT id, parent_id FROM folders WHERE share_id != \'\''];
+		let unshareQuery = kysely.selectFrom('folders').select(['id', 'parent_id']).where('share_id', '!=', '');
 		if (sharedFolderIds.length) {
-			sql.push(` AND id NOT IN (${Folder.escapeIdsForSql(sharedFolderIds)})`);
+			unshareQuery = unshareQuery.where('id', 'not in', literalList(sharedFolderIds));
 		}
 
-		const foldersToUnshare: FolderEntity[] = await this.db().selectAll(sql.join(' '));
+		const foldersToUnshare: FolderEntity[] = await this.db().selectAll(unshareQuery);
 
 		report.unshareUpdateCount += foldersToUnshare.length;
 
@@ -574,12 +574,12 @@ export default class Folder extends BaseItem {
 	public static async updateNoteShareIds() {
 		// Find all the notes where the share_id is not the same as the
 		// parent share_id because we only need to update those.
-		const rows = await this.db().selectAll(`
-			SELECT notes.id, folders.share_id, notes.parent_id
-			FROM notes
-			LEFT JOIN folders ON notes.parent_id = folders.id
-			WHERE notes.share_id != folders.share_id
-		`);
+		const rows = await this.db().selectAll(
+			kysely.selectFrom('notes')
+				.leftJoin('folders', 'notes.parent_id', 'folders.id')
+				.select(['notes.id', 'folders.share_id', 'notes.parent_id'])
+				.whereRef('notes.share_id', '!=', 'folders.share_id'),
+		);
 
 		logger.debug('updateNoteShareIds: notes to update:', rows.length);
 
@@ -640,21 +640,14 @@ export default class Folder extends BaseItem {
 			// makes it match the resource share_id to the note share_id. At the
 			// same time we also process the is_shared property.
 
-			const rows = (await this.db().selectAll(`
-				SELECT
-					r.id,
-					n.share_id,
-					n.is_shared,
-					r.is_shared as resource_is_shared,
-					r.share_id as resource_share_id
-				FROM note_resources nr
-				LEFT JOIN resources r ON nr.resource_id = r.id
-				LEFT JOIN notes n ON nr.note_id = n.id
-				WHERE (
-					n.share_id != r.share_id
-					OR n.is_shared != r.is_shared
-				) AND nr.is_associated = 1
-			`)) as Row[];
+			const rows = (await this.db().selectAll(
+				kysely.selectFrom('note_resources as nr')
+					.leftJoin('resources as r', 'nr.resource_id', 'r.id')
+					.leftJoin('notes as n', 'nr.note_id', 'n.id')
+					.select(['r.id', 'n.share_id', 'n.is_shared', 'r.is_shared as resource_is_shared', 'r.share_id as resource_share_id'])
+					.where(eb => eb.or([eb('n.share_id', '!=', eb.ref('r.share_id')), eb('n.is_shared', '!=', eb.ref('r.is_shared'))]))
+					.where('nr.is_associated', '=', 1),
+			)) as Row[];
 
 			if (!rows.length) return;
 
@@ -674,20 +667,14 @@ export default class Folder extends BaseItem {
 
 			// Order unshared items first: This makes conflicts less likely, since shared
 			// items are more likely to be duplicated by multiple users.
-			const orderingSql = 'ORDER BY is_shared ASC';
-
-			const noteResourceAssociations = await this.db().selectAll(`
-				SELECT
-					resource_id,
-					note_id,
-					notes.share_id,
-					(notes.share_id != '') AS is_shared
-				FROM note_resources
-				LEFT JOIN notes ON notes.id = note_resources.note_id
-				WHERE resource_id IN (${this.escapeIdsForSql(resourceIds)})
-				AND is_associated = 1
-				${orderingSql}
-			`) as NoteResourceRow[];
+			const noteResourceAssociations = await this.db().selectAll(
+				kysely.selectFrom('note_resources')
+					.leftJoin('notes', 'notes.id', 'note_resources.note_id')
+					.select(eb => ['resource_id', 'note_id', 'notes.share_id', eb('notes.share_id', '!=', '').as('is_shared')])
+					.where('resource_id', 'in', literalList(resourceIds))
+					.where('is_associated', '=', 1)
+					.orderBy('is_shared', 'asc'),
+			) as NoteResourceRow[];
 
 			const resourceIdToNotes: Record<string, NoteResourceRow[]> = {};
 
@@ -802,18 +789,19 @@ export default class Folder extends BaseItem {
 			}
 		}
 
-		const noteIsSharedSql = [
-			directlyPublishedNoteIds.length ? `id IN (${this.escapeIdsForSql(directlyPublishedNoteIds)})` : '',
-			publishedFolderIds.length ? `parent_id IN (${this.escapeIdsForSql(publishedFolderIds)})` : '',
-		].filter(v => !!v).join(' OR ');
-
 		let notesToUpdate: NoteEntity[] = [];
-		if (noteIsSharedSql) {
-			notesToUpdate = await this.db().selectAll(`
-				SELECT id, parent_id, is_shared
-				FROM notes
-				WHERE is_shared = 0 AND (${noteIsSharedSql})
-			`);
+		if (directlyPublishedNoteIds.length || publishedFolderIds.length) {
+			notesToUpdate = await this.db().selectAll(
+				kysely.selectFrom('notes')
+					.select(['id', 'parent_id', 'is_shared'])
+					.where('is_shared', '=', 0)
+					.where(eb => {
+						const conditions = [];
+						if (directlyPublishedNoteIds.length) conditions.push(eb('id', 'in', literalList(directlyPublishedNoteIds)));
+						if (publishedFolderIds.length) conditions.push(eb('parent_id', 'in', literalList(publishedFolderIds)));
+						return eb.or(conditions);
+					}),
+			);
 		}
 
 		for (const note of notesToUpdate) {
@@ -844,13 +832,8 @@ export default class Folder extends BaseItem {
 			const fields = ['id'];
 			if (hasParentId) fields.push('parent_id');
 
-			const query = activeShareIds.length ? `
-				SELECT ${this.db().escapeFields(fields)} FROM ${tableName}
-				WHERE share_id != '' AND share_id NOT IN (${this.escapeIdsForSql(activeShareIds)})
-			` : `
-				SELECT ${this.db().escapeFields(fields)} FROM ${tableName}
-				WHERE share_id != ''
-			`;
+			let query = selectFrom(tableName, fields).where('share_id', '!=', '');
+			if (activeShareIds.length) query = query.where('share_id', 'not in', literalList(activeShareIds));
 
 			const rows = await this.db().selectAll(query);
 
@@ -1015,7 +998,7 @@ export default class Folder extends BaseItem {
 	}
 
 	public static async loadByTitleAndParent(title: string, parentId: string, options: LoadOptions = null): Promise<FolderEntity> {
-		return await this.modelSelectOne(`SELECT ${this.selectFields(options)} FROM folders WHERE title = ? and parent_id = ?`, [title, parentId]);
+		return await this.modelSelectOne(selectFrom('folders', options?.fields ? options.fields : '*').where('title', '=', title).where('parent_id', '=', parentId));
 	}
 
 	public static load(id: string, options: LoadOptions = null): Promise<FolderEntity> {
@@ -1025,7 +1008,7 @@ export default class Folder extends BaseItem {
 	}
 
 	public static defaultFolder() {
-		return this.modelSelectOne('SELECT * FROM folders WHERE deleted_time = 0 ORDER BY created_time DESC LIMIT 1');
+		return this.modelSelectOne(kysely.selectFrom('folders').selectAll().where('deleted_time', '=', 0).orderBy('created_time', 'desc').limit(1));
 	}
 
 	public static async canNestUnder(folderId: string, targetFolderId: string) {
@@ -1141,7 +1124,7 @@ export default class Folder extends BaseItem {
 		const cutOffTime = Date.now() - ttl;
 
 		const getItemIds = async (table: string, cutOffTime: number): Promise<string[]> => {
-			const items = await this.db().selectAll(`SELECT id from ${table} WHERE deleted_time > 0 AND deleted_time < ?`, [cutOffTime]);
+			const items = await this.db().selectAll(selectFrom(table, ['id']).where('deleted_time', '>', 0).where('deleted_time', '<', cutOffTime));
 			return items.map(i => i.id);
 		};
 

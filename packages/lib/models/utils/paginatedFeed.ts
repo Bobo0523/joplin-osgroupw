@@ -1,6 +1,8 @@
 import JoplinDatabase from '../../JoplinDatabase';
-import paginationToSql from './paginationToSql';
+import { orderBy, selectFrom } from '../../services/database/kysely';
+import { legacyFragment } from '../../services/database/sqlFragments';
 import { Pagination, PaginationOrder } from './types';
+import { Expression, SqlBool } from 'kysely';
 
 export interface ModelFeedPage {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Heterogeneous: callers receive entity types (Note/Folder/Resource) which lack index signatures
@@ -9,18 +11,19 @@ export interface ModelFeedPage {
 	total?: number;
 }
 
-export interface WhereQuery {
+interface LegacyWhereQuery {
 	sql: string;
 	params?: (string | number | boolean)[];
 }
+
+export type WhereQuery = LegacyWhereQuery | Expression<SqlBool>;
+
+const isLegacyWhereQuery = (whereQuery: WhereQuery): whereQuery is LegacyWhereQuery => 'sql' in whereQuery;
 
 // Note: this method might return more fields than was requested as it will
 // also return fields that are necessary for pagination.
 export default async function(db: JoplinDatabase, tableName: string, pagination: Pagination, whereQuery: WhereQuery = null, fields: string[] = null): Promise<ModelFeedPage> {
 	fields = fields ? fields.slice() : ['id'];
-
-	const where = whereQuery && whereQuery.sql ? [whereQuery.sql] : [];
-	const sqlParams = whereQuery && whereQuery.params ? whereQuery.params.slice() : [];
 
 	if (!pagination.order.length) throw new Error('Pagination order must be provided');
 	if (pagination.order.length > 1) throw new Error('Only one pagination order field can be provided');
@@ -38,19 +41,19 @@ export default async function(db: JoplinDatabase, tableName: string, pagination:
 		};
 	}
 
-	const orderBySql = paginationToSql(pagination);
-	const fieldsSql = fields.length ? db.escapeFields(fields) : '*';
 	const offset = (pagination.page - 1) * pagination.limit;
 
-	const sql = `
-		SELECT ${fieldsSql} FROM \`${tableName}\`
-		${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-		ORDER BY ${orderBySql}
-		LIMIT ${pagination.limit}
-		OFFSET ${offset}
-	`;
+	let query = selectFrom(tableName, fields.length ? fields : '*');
+	if (whereQuery) {
+		if (!isLegacyWhereQuery(whereQuery)) {
+			query = query.where(whereQuery);
+		} else if (whereQuery.sql) {
+			query = query.where(legacyFragment<boolean>(whereQuery.sql, whereQuery.params ? whereQuery.params.slice() : []));
+		}
+	}
+	query = orderBy(query, pagination.order, pagination.caseInsensitive).limit(pagination.limit).offset(offset);
 
-	const rows = await db.selectAll(sql, sqlParams);
+	const rows = await db.selectAll(query);
 
 	return {
 		items: rows,

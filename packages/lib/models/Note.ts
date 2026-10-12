@@ -29,6 +29,9 @@ import { ALL_NOTES_FILTER_ID } from '../reserved-ids';
 import NoteLockNote from '../services/noteLock/NoteLockNote';
 import isNoteLockEnabled from '../services/noteLock/isNoteLockEnabled';
 import isItemId from './utils/isItemId';
+import { LegacyCondition } from '../services/database/sqlFragments';
+import { dynamicExpression, dynamicKysely, kysely, selectFrom } from '../services/database/kysely';
+import { literalList } from '../services/database/sqlFragments';
 
 export interface PreviewsOrder {
 	by: string;
@@ -44,7 +47,7 @@ export interface DuplicateOptions {
 
 export interface PreviewsOptions {
 	order?: PreviewsOrder[];
-	conditions?: string[];
+	conditions?: LegacyCondition[];
 	conditionsParams?: (string | number | boolean)[];
 	fields?: string[] | string;
 	uncompletedTodosOnTop?: boolean;
@@ -389,18 +392,11 @@ export default class Note extends BaseItem {
 		return output;
 	}
 
-	public static previewFieldsSql(fields: string[] = null) {
-		if (fields === null) fields = this.previewFields();
-		const escaped = this.db().escapeFields(fields);
-		return Array.isArray(escaped) ? escaped.join(',') : escaped;
-	}
-
 	public static async loadFolderNoteByField(folderId: string, field: string, value: string | number | boolean) {
 		if (!folderId) throw new Error('folderId is undefined');
 
 		const options: PreviewsOptions = {
-			conditions: [`\`${field}\` = ?`],
-			conditionsParams: [value],
+			conditions: [dynamicExpression(field, '=', value)],
 			fields: '*',
 		};
 
@@ -450,25 +446,24 @@ export default class Note extends BaseItem {
 		// in the trash.
 		if (parentId === Folder.conflictFolderId() || withinTrash) options.showCompletedTodos = true;
 
+		const eb = dynamicExpression;
+
 		if (parentId === Folder.conflictFolderId()) {
-			options.conditions.push('is_conflict = 1');
-			options.conditions.push('deleted_time = 0');
+			options.conditions.push(eb('is_conflict', '=', 1));
+			options.conditions.push(eb('deleted_time', '=', 0));
 		} else if (withinTrash) {
-			options.conditions.push('deleted_time > 0');
+			options.conditions.push(eb('deleted_time', '>', 0));
 		} else {
-			options.conditions.push('is_conflict = 0');
-			options.conditions.push('deleted_time = 0');
+			options.conditions.push(eb('is_conflict', '=', 0));
+			options.conditions.push(eb('deleted_time', '=', 0));
 			if (parentId && parentId !== ALL_NOTES_FILTER_ID) {
-				options.conditions.push('parent_id = ?');
-				options.conditionsParams.push(parentId);
+				options.conditions.push(eb('parent_id', '=', parentId));
 			}
 		}
 
 		if (options.anywherePattern) {
 			const pattern = options.anywherePattern.replace(/\*/g, '%');
-			options.conditions.push('(title LIKE ? OR body LIKE ?)');
-			options.conditionsParams.push(pattern);
-			options.conditionsParams.push(pattern);
+			options.conditions.push(eb.or([eb('title', 'like', pattern), eb('body', 'like', pattern)]));
 		}
 
 		let hasNotes = true;
@@ -482,13 +477,13 @@ export default class Note extends BaseItem {
 		}
 
 		if (!options.showCompletedTodos) {
-			options.conditions.push('todo_completed <= 0');
+			options.conditions.push(eb('todo_completed', '<=', 0));
 		}
 
 		if (!withinTrash && options.uncompletedTodosOnTop && hasTodos) {
 			let cond = options.conditions.slice();
-			cond.push('is_todo = 1');
-			cond.push('(todo_completed <= 0 OR todo_completed IS NULL)');
+			cond.push(eb('is_todo', '=', 1));
+			cond.push(eb.or([eb('todo_completed', '<=', 0), eb('todo_completed', 'is', null)]));
 			let tempOptions: PreviewsOptions = { ...options };
 			tempOptions.conditions = cond;
 
@@ -496,10 +491,11 @@ export default class Note extends BaseItem {
 			this.handleTitleNaturalSorting(uncompletedTodos, tempOptions);
 
 			cond = options.conditions.slice();
+			const completedTodo = eb.and([eb('is_todo', '=', 1), eb('todo_completed', '>', 0)]);
 			if (hasNotes && hasTodos) {
-				cond.push('(is_todo = 0 OR (is_todo = 1 AND todo_completed > 0))');
+				cond.push(eb.or([eb('is_todo', '=', 0), completedTodo]));
 			} else {
-				cond.push('(is_todo = 1 AND todo_completed > 0)');
+				cond.push(completedTodo);
 			}
 
 			tempOptions = { ...options };
@@ -514,9 +510,9 @@ export default class Note extends BaseItem {
 		if (hasNotes && hasTodos) {
 			// Nothing
 		} else if (hasNotes) {
-			options.conditions.push('is_todo = 0');
+			options.conditions.push(eb('is_todo', '=', 0));
 		} else if (hasTodos) {
-			options.conditions.push('is_todo = 1');
+			options.conditions.push(eb('is_todo', '=', 1));
 		}
 
 		let results = await this.search(options);
@@ -550,9 +546,9 @@ export default class Note extends BaseItem {
 
 	public static preview(noteId: string, options: { fields?: string | string[] | null; excludeConflicts?: boolean } = null) {
 		if (!options) options = { fields: null };
-		const excludeConflictsSql = options.excludeConflicts ? 'is_conflict = 0 AND' : '';
-		const fieldsForSql = Array.isArray(options.fields) ? options.fields : null;
-		return this.modelSelectOne(`SELECT ${this.previewFieldsSql(fieldsForSql)} FROM notes WHERE ${excludeConflictsSql} id = ?`, [noteId]);
+		let query = selectFrom('notes', Array.isArray(options.fields) ? options.fields : this.previewFields());
+		if (options.excludeConflicts) query = query.where('is_conflict', '=', 0);
+		return this.modelSelectOne(query.where('id', '=', noteId));
 	}
 
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- search forwards to BaseItem.search which accepts arbitrary SearchOptions augmented with bodyPattern; tightening conflicts with the supertype
@@ -563,19 +559,18 @@ export default class Note extends BaseItem {
 
 		if (options.bodyPattern) {
 			const pattern = options.bodyPattern.replace(/\*/g, '%');
-			options.conditions.push('body LIKE ?');
-			options.conditionsParams.push(pattern);
+			options.conditions.push(dynamicExpression('body', 'like', pattern));
 		}
 
 		return super.search(options);
 	}
 
 	public static conflictedNotes() {
-		return this.modelSelectAll('SELECT * FROM notes WHERE is_conflict = 1 AND deleted_time = 0');
+		return this.modelSelectAll(kysely.selectFrom('notes').selectAll().where('is_conflict', '=', 1).where('deleted_time', '=', 0));
 	}
 
 	public static async conflictedCount() {
-		const r = await this.db().selectOne('SELECT count(*) as total FROM notes WHERE is_conflict = 1 AND deleted_time = 0');
+		const r = await this.db().selectOne(kysely.selectFrom('notes').select(eb => eb.fn.countAll().as('total')).where('is_conflict', '=', 1).where('deleted_time', '=', 0));
 		return r && r.total ? r.total : 0;
 	}
 
@@ -584,13 +579,17 @@ export default class Note extends BaseItem {
 	// denominator in "N / total indexed".
 	public static async indexableCount() {
 		const r = await this.db().selectOne(
-			'SELECT count(*) as total FROM notes WHERE (deleted_time IS NULL OR deleted_time = 0) AND (is_conflict IS NULL OR is_conflict = 0) AND is_locked = 0',
+			kysely.selectFrom('notes')
+				.select(eb => eb.fn.countAll().as('total'))
+				.where(eb => eb.or([eb('deleted_time', 'is', null), eb('deleted_time', '=', 0)]))
+				.where(eb => eb.or([eb('is_conflict', 'is', null), eb('is_conflict', '=', 0)]))
+				.where('is_locked', '=', 0),
 		);
 		return r && r.total ? r.total : 0;
 	}
 
 	public static unconflictedNotes() {
-		return this.modelSelectAll('SELECT * FROM notes WHERE is_conflict = 0');
+		return this.modelSelectAll(kysely.selectFrom('notes').selectAll().where('is_conflict', '=', 0));
 	}
 
 	public static async updateGeolocation(noteId: string): Promise<NoteEntity | null> {
@@ -796,7 +795,7 @@ export default class Note extends BaseItem {
 	}
 
 	public static async noteIsOlderThan(noteId: string, date: number) {
-		const n = await this.db().selectOne('SELECT updated_time FROM notes WHERE id = ?', [noteId]);
+		const n = await this.db().selectOne(kysely.selectFrom('notes').select('updated_time').where('id', '=', noteId));
 		if (!n) throw new Error(`No such note: ${noteId}`);
 		return n.updated_time < date;
 	}
@@ -969,28 +968,16 @@ export default class Note extends BaseItem {
 			if (toTrash) {
 				const now = Date.now();
 
-				const updateSql = [
-					'deleted_time = ?',
-					'updated_time = ?',
-				];
-
-				const params: (string|number)[] = [
-					now,
-					now,
-				];
+				const values: Record<string, unknown> = {
+					deleted_time: now,
+					updated_time: now,
+				};
 
 				if ('toTrashParentId' in options) {
-					updateSql.push('parent_id = ?');
-					params.push(options.toTrashParentId);
+					values.parent_id = options.toTrashParentId;
 				}
 
-				const sql = `
-					UPDATE notes
-					SET	${updateSql.join(', ')}						
-					WHERE id IN (${this.escapeIdsForSql(processIds)})
-				`;
-
-				await this.db().exec({ sql, params });
+				await this.db().exec(dynamicKysely.updateTable('notes').set(values).where('id', 'in', literalList(processIds)));
 			} else {
 				// For now, we intentionally log only permanent batchDeletions.
 				const actionLogger = ActionLogger.from(options.sourceDescription);
@@ -1032,7 +1019,14 @@ export default class Note extends BaseItem {
 	}
 
 	public static dueNotes() {
-		return this.modelSelectAll('SELECT id, title, body, is_todo, todo_due, todo_completed, is_conflict FROM notes WHERE is_conflict = 0 AND is_todo = 1 AND todo_completed = 0 AND todo_due > ?', [time.unixMs()]);
+		return this.modelSelectAll(
+			kysely.selectFrom('notes')
+				.select(['id', 'title', 'body', 'is_todo', 'todo_due', 'todo_completed', 'is_conflict'])
+				.where('is_conflict', '=', 0)
+				.where('is_todo', '=', 1)
+				.where('todo_completed', '=', 0)
+				.where('todo_due', '>', time.unixMs()),
+		);
 	}
 
 	public static needAlarm(note: NoteEntity) {
@@ -1107,17 +1101,12 @@ export default class Note extends BaseItem {
 
 		try {
 			const getSortedNotes = async (folderId: string) => {
-				const noteSql = `
-					SELECT id, \`order\`, user_created_time, user_updated_time,
-						is_todo, todo_completed, title
-					FROM notes
-					WHERE
-						is_conflict = 0
-						AND deleted_time = 0
-						${showCompletedTodos ? '' : 'AND todo_completed = 0'}
-					AND parent_id = ?
-				`;
-				const notes_raw: NoteEntity[] = await this.modelSelectAll(noteSql, [folderId]);
+				let query = kysely.selectFrom('notes')
+					.select(['id', 'order', 'user_created_time', 'user_updated_time', 'is_todo', 'todo_completed', 'title'])
+					.where('is_conflict', '=', 0)
+					.where('deleted_time', '=', 0);
+				if (!showCompletedTodos) query = query.where('todo_completed', '=', 0);
+				const notes_raw: NoteEntity[] = await this.modelSelectAll(query.where('parent_id', '=', folderId));
 				return await this.sortNotes(notes_raw, this.customOrderByColumns(), uncompletedTodosOnTop);
 			};
 
@@ -1266,13 +1255,23 @@ export default class Note extends BaseItem {
 	// when a conflict later occurs. A clean upload also means there's no active
 	// conflict, so we clear any previously recorded conflict note id.
 	public static async saveSyncBaseContent(syncTarget: number, noteId: string, body: string, title: string) {
-		const sql = 'UPDATE sync_items SET base_body = ?, base_title = ?, base_conflict_note_id = ? WHERE item_id = ? AND item_type = ? AND sync_target = ?';
-		await this.db().exec(sql, [body, title, '', noteId, this.TYPE_NOTE, syncTarget]);
+		await this.db().exec(
+			kysely.updateTable('sync_items')
+				.set({ base_body: body, base_title: title, base_conflict_note_id: '' })
+				.where('item_id', '=', noteId)
+				.where('item_type', '=', this.TYPE_NOTE)
+				.where('sync_target', '=', syncTarget),
+		);
 	}
 
 	public static async setBaseConflictNoteId(syncTarget: number, noteId: string, conflictNoteId: string) {
-		const sql = 'UPDATE sync_items SET base_conflict_note_id = ? WHERE item_id = ? AND item_type = ? AND sync_target = ?';
-		await this.db().exec(sql, [conflictNoteId, noteId, this.TYPE_NOTE, syncTarget]);
+		await this.db().exec(
+			kysely.updateTable('sync_items')
+				.set({ base_conflict_note_id: conflictNoteId })
+				.where('item_id', '=', noteId)
+				.where('item_type', '=', this.TYPE_NOTE)
+				.where('sync_target', '=', syncTarget),
+		);
 	}
 
 	public static async syncBaseContent(syncTarget: number, noteId: string): Promise<SyncItemEntity> {
@@ -1282,10 +1281,10 @@ export default class Note extends BaseItem {
 	public static async getNextOrderValue(folderId: string) {
 		const reverse = Setting.value('notes.sortOrder.reverse');
 		if (reverse) {
-			const folder = await this.modelSelectOne('SELECT MAX(`order`) as `order` FROM notes WHERE parent_id = ?', [folderId]);
+			const folder = await this.modelSelectOne(kysely.selectFrom('notes').select(eb => eb.fn.max('order').as('order')).where('parent_id', '=', folderId));
 			return Number(folder.order ?? 0) + this.defaultIntevalBetweenNotes;
 		} else {
-			const folder = await this.modelSelectOne('SELECT MIN(`order`) as `order` FROM notes WHERE parent_id = ?', [folderId]);
+			const folder = await this.modelSelectOne(kysely.selectFrom('notes').select(eb => eb.fn.min('order').as('order')).where('parent_id', '=', folderId));
 			return Number(folder.order ?? 0) - this.defaultIntevalBetweenNotes;
 		}
 	}

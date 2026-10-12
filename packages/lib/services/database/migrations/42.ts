@@ -1,8 +1,10 @@
 import addMigrationFile from '../addMigrationFile';
-import { SqlQuery } from '../types';
+import { Migration } from '../types';
 
-export default (): (SqlQuery|string)[] => {
+const migration: Migration = () => {
 	return [
 		addMigrationFile(42),
 	];
 };
+
+export default migration;

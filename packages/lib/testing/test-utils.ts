@@ -72,6 +72,8 @@ import { dirname } from '@joplin/utils/path';
 import SyncTargetJoplinServerSAML from '../SyncTargetJoplinServerSAML';
 import { MarkupLanguage } from '@joplin/renderer';
 import SearchEngine from '../services/search/SearchEngine';
+import { QueryInput } from '../database';
+import { dynamicKysely, kysely } from '../services/database/kysely';
 
 // Each suite has its own separate data and temp directory so that multiple
 // suites can be run at the same time. suiteName is what is used to
@@ -339,10 +341,10 @@ async function clearDatabase(id: number = null) {
 		'tags',
 	];
 
-	const queries = [];
+	const queries: QueryInput[] = [];
 	for (const n of tableNames) {
-		queries.push(`DELETE FROM ${n}`);
-		queries.push(`DELETE FROM sqlite_sequence WHERE name="${n}"`); // Reset autoincremented IDs
+		queries.push(dynamicKysely.deleteFrom(n));
+		queries.push(kysely.deleteFrom('sqlite_sequence').where('name', '=', n)); // Reset autoincremented IDs
 	}
 	await databases_[id].transactionExecBatch(queries);
 }

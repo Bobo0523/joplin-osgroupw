@@ -1,6 +1,8 @@
 import JoplinDatabase from '../JoplinDatabase';
 import Setting from '../models/Setting';
 import SyncTargetJoplinServer from '../SyncTargetJoplinServer';
+import { QueryInput } from '../database';
+import { dynamicKysely, kysely } from '../services/database/kysely';
 
 export default class DebugService {
 
@@ -22,15 +24,15 @@ export default class DebugService {
 			'key_values',
 		];
 
-		const queries = [];
+		const queries: QueryInput[] = [];
 		for (const n of tableNames) {
-			queries.push(`DELETE FROM ${n}`);
-			queries.push(`DELETE FROM sqlite_sequence WHERE name="${n}"`); // Reset autoincremented IDs
+			queries.push(dynamicKysely.deleteFrom(n));
+			queries.push(kysely.deleteFrom('sqlite_sequence').where('name', '=', n)); // Reset autoincremented IDs
 		}
 
 		for (let i = 0; i < 20; i++) {
-			queries.push(`DELETE FROM settings WHERE key="sync.${i}.context"`);
-			queries.push(`DELETE FROM settings WHERE key="sync.${i}.auth"`);
+			queries.push(kysely.deleteFrom('settings').where('key', '=', `sync.${i}.context`));
+			queries.push(kysely.deleteFrom('settings').where('key', '=', `sync.${i}.auth`));
 		}
 
 		await this.db.transactionExecBatch(queries);

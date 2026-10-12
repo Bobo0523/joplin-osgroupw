@@ -1,126 +1,138 @@
 import Resource from './models/Resource';
 import shim from './shim';
-import Database, { Row } from './database';
-import { SqlQuery } from './services/database/types';
+import Database, { QueryInput, Row } from './database';
 import addMigrationFile from './services/database/addMigrationFile';
-import sqlStringToLines from './services/database/sqlStringToLines';
 import migrations from './services/database/migrations';
+import { dynamicKysely, insertInto, kysely } from './services/database/kysely';
+import { addColumnQuery, alterColumnQueries, column, createIndexQuery, createTableQuery, intColumn, textColumn } from './services/database/schemaUtils';
+import createTagsWithNoteCountView from './services/database/tagsWithNoteCountView';
+import { createFtsTableQuery, createFtsTriggerQueries, createVirtualTableQuery, dropTriggerQuery, ftsInitialIndexQuery, tableInfoQuery } from './services/database/sqlFragments';
 
 const { sprintf } = require('sprintf-js');
 
-const structureSql = `
-CREATE TABLE folders (
-	id TEXT PRIMARY KEY,
-	title TEXT NOT NULL DEFAULT "",
-	created_time INT NOT NULL,
-	updated_time INT NOT NULL
-);
+const notesFtsTriggerNames = ['notes_fts_before_update', 'notes_fts_before_delete', 'notes_after_update', 'notes_after_insert'] as const;
 
-CREATE INDEX folders_title ON folders (title);
-CREATE INDEX folders_updated_time ON folders (updated_time);
+// In SQLite, if the default value of a column is a string, PRAGMA table_info
+// returns it with quotes around it, so they are removed here. The original
+// upgrade steps used double quotes and the Kysely schema builder uses single
+// quotes, in which case a quote inside the string is doubled.
+export const unquoteDefaultValue = (defaultValue: unknown) => {
+	if (typeof defaultValue !== 'string' || defaultValue.length < 2) return defaultValue;
+	const quote = defaultValue[0];
+	if (defaultValue[defaultValue.length - 1] !== quote) return defaultValue;
+	if (quote === '"') return defaultValue.substr(1, defaultValue.length - 2);
+	if (quote === '\'') return defaultValue.substr(1, defaultValue.length - 2).replace(/''/g, '\'');
+	return defaultValue;
+};
 
-CREATE TABLE notes (
-	id TEXT PRIMARY KEY,
-	parent_id TEXT NOT NULL DEFAULT "",
-	title TEXT NOT NULL DEFAULT "",
-	body TEXT NOT NULL DEFAULT "",
-	created_time INT NOT NULL,
-	updated_time INT NOT NULL,
-	is_conflict INT NOT NULL DEFAULT 0,
-	latitude NUMERIC NOT NULL DEFAULT 0,
-	longitude NUMERIC NOT NULL DEFAULT 0,
-	altitude NUMERIC NOT NULL DEFAULT 0,
-	author TEXT NOT NULL DEFAULT "",
-	source_url TEXT NOT NULL DEFAULT "",
-	is_todo INT NOT NULL DEFAULT 0,
-	todo_due INT NOT NULL DEFAULT 0,
-	todo_completed INT NOT NULL DEFAULT 0,
-	source TEXT NOT NULL DEFAULT "",
-	source_application TEXT NOT NULL DEFAULT "",
-	application_data TEXT NOT NULL DEFAULT "",
-	\`order\` INT NOT NULL DEFAULT 0
-);
+// The schema of version 1 of the database. The tables were changed later on
+// by the upgrade steps in upgradeDatabase().
+const structureQueries = () => {
+	const timestamps = [column('created_time', 'int', { notNull: true }), column('updated_time', 'int', { notNull: true })];
 
-CREATE INDEX notes_title ON notes (title);
-CREATE INDEX notes_updated_time ON notes (updated_time);
-CREATE INDEX notes_is_conflict ON notes (is_conflict);
-CREATE INDEX notes_is_todo ON notes (is_todo);
-CREATE INDEX notes_order ON notes (\`order\`);
+	return [
+		createTableQuery('folders', [
+			column('id', 'text', { primaryKey: true }),
+			textColumn('title'),
+			...timestamps,
+		]),
+		createIndexQuery('folders_title', 'folders', ['title']),
+		createIndexQuery('folders_updated_time', 'folders', ['updated_time']),
 
-CREATE TABLE tags (
-	id TEXT PRIMARY KEY,
-	title TEXT NOT NULL DEFAULT "",
-	created_time INT NOT NULL,
-	updated_time INT NOT NULL
-);
+		createTableQuery('notes', [
+			column('id', 'text', { primaryKey: true }),
+			textColumn('parent_id'),
+			textColumn('title'),
+			textColumn('body'),
+			...timestamps,
+			intColumn('is_conflict'),
+			column('latitude', 'numeric', { notNull: true, default: 0 }),
+			column('longitude', 'numeric', { notNull: true, default: 0 }),
+			column('altitude', 'numeric', { notNull: true, default: 0 }),
+			textColumn('author'),
+			textColumn('source_url'),
+			intColumn('is_todo'),
+			intColumn('todo_due'),
+			intColumn('todo_completed'),
+			textColumn('source'),
+			textColumn('source_application'),
+			textColumn('application_data'),
+			intColumn('order'),
+		]),
+		createIndexQuery('notes_title', 'notes', ['title']),
+		createIndexQuery('notes_updated_time', 'notes', ['updated_time']),
+		createIndexQuery('notes_is_conflict', 'notes', ['is_conflict']),
+		createIndexQuery('notes_is_todo', 'notes', ['is_todo']),
+		createIndexQuery('notes_order', 'notes', ['order']),
 
-CREATE INDEX tags_title ON tags (title);
-CREATE INDEX tags_updated_time ON tags (updated_time);
+		createTableQuery('tags', [
+			column('id', 'text', { primaryKey: true }),
+			textColumn('title'),
+			...timestamps,
+		]),
+		createIndexQuery('tags_title', 'tags', ['title']),
+		createIndexQuery('tags_updated_time', 'tags', ['updated_time']),
 
-CREATE TABLE note_tags (
-	id TEXT PRIMARY KEY,
-	note_id TEXT NOT NULL,
-	tag_id TEXT NOT NULL,
-	created_time INT NOT NULL,
-	updated_time INT NOT NULL
-);
+		createTableQuery('note_tags', [
+			column('id', 'text', { primaryKey: true }),
+			column('note_id', 'text', { notNull: true }),
+			column('tag_id', 'text', { notNull: true }),
+			...timestamps,
+		]),
+		createIndexQuery('note_tags_note_id', 'note_tags', ['note_id']),
+		createIndexQuery('note_tags_tag_id', 'note_tags', ['tag_id']),
+		createIndexQuery('note_tags_updated_time', 'note_tags', ['updated_time']),
 
-CREATE INDEX note_tags_note_id ON note_tags (note_id);
-CREATE INDEX note_tags_tag_id ON note_tags (tag_id);
-CREATE INDEX note_tags_updated_time ON note_tags (updated_time);
+		createTableQuery('resources', [
+			column('id', 'text', { primaryKey: true }),
+			textColumn('title'),
+			column('mime', 'text', { notNull: true }),
+			textColumn('filename'),
+			...timestamps,
+		]),
+		createIndexQuery('resources_title', 'resources', ['title']),
+		createIndexQuery('resources_updated_time', 'resources', ['updated_time']),
 
-CREATE TABLE resources (
-	id TEXT PRIMARY KEY,
-	title TEXT NOT NULL DEFAULT "",
-	mime TEXT NOT NULL,
-	filename TEXT NOT NULL DEFAULT "",
-	created_time INT NOT NULL,
-	updated_time INT NOT NULL
-);
+		createTableQuery('settings', [
+			column('key', 'text', { primaryKey: true }),
+			column('value', 'text'),
+			column('type', 'int', { notNull: true }),
+		]),
 
-CREATE INDEX resources_title ON resources (title);
-CREATE INDEX resources_updated_time ON resources (updated_time);
+		createTableQuery('table_fields', [
+			column('id', 'integer', { primaryKey: true }),
+			column('table_name', 'text', { notNull: true }),
+			column('field_name', 'text', { notNull: true }),
+			column('field_type', 'int', { notNull: true }),
+			column('field_default', 'text'),
+		]),
 
-CREATE TABLE settings (
-	\`key\` TEXT PRIMARY KEY,
-	\`value\` TEXT,
-	\`type\` INT NOT NULL
-);
+		createTableQuery('sync_items', [
+			column('id', 'integer', { primaryKey: true }),
+			column('sync_target', 'int', { notNull: true }),
+			intColumn('sync_time'),
+			column('item_type', 'int', { notNull: true }),
+			column('item_id', 'text', { notNull: true }),
+		]),
+		createIndexQuery('sync_items_sync_time', 'sync_items', ['sync_time']),
+		createIndexQuery('sync_items_sync_target', 'sync_items', ['sync_target']),
+		createIndexQuery('sync_items_item_type', 'sync_items', ['item_type']),
+		createIndexQuery('sync_items_item_id', 'sync_items', ['item_id']),
 
-CREATE TABLE table_fields (
-	id INTEGER PRIMARY KEY,
-	table_name TEXT NOT NULL,
-	field_name TEXT NOT NULL,
-	field_type INT NOT NULL,
-	field_default TEXT
-);
+		createTableQuery('deleted_items', [
+			column('id', 'integer', { primaryKey: true }),
+			column('item_type', 'int', { notNull: true }),
+			column('item_id', 'text', { notNull: true }),
+			column('deleted_time', 'int', { notNull: true }),
+		]),
 
-CREATE TABLE sync_items (
-	id INTEGER PRIMARY KEY,
-	sync_target INT NOT NULL,
-	sync_time INT NOT NULL DEFAULT 0,
-	item_type INT NOT NULL,
-	item_id TEXT NOT NULL
-);
+		createTableQuery('version', [
+			column('version', 'int', { notNull: true }),
+		]),
 
-CREATE INDEX sync_items_sync_time ON sync_items (sync_time);
-CREATE INDEX sync_items_sync_target ON sync_items (sync_target);
-CREATE INDEX sync_items_item_type ON sync_items (item_type);
-CREATE INDEX sync_items_item_id ON sync_items (item_id);
-
-CREATE TABLE deleted_items (
-	id INTEGER PRIMARY KEY,
-	item_type INT NOT NULL,
-	item_id TEXT NOT NULL,
-	deleted_time INT NOT NULL
-);
-
-CREATE TABLE version (
-	version INT NOT NULL
-);
-
-INSERT INTO version (version) VALUES (1);
-`;
+		insertInto('version', { version: 1 }),
+	];
+};
 
 export interface TableField {
 	name: string;
@@ -231,23 +243,25 @@ export default class JoplinDatabase extends Database {
 			'key_values',
 		];
 
-		const queries = [];
+		const queries: QueryInput[] = [];
 		for (const n of tableNames) {
-			queries.push(`DELETE FROM ${n}`);
-			queries.push(`DELETE FROM sqlite_sequence WHERE name="${n}"`); // Reset autoincremented IDs
+			queries.push(dynamicKysely.deleteFrom(n));
+			queries.push(kysely.deleteFrom('sqlite_sequence').where('name', '=', n)); // Reset autoincremented IDs
 		}
 
-		queries.push('DELETE FROM settings WHERE key="sync.1.context"');
-		queries.push('DELETE FROM settings WHERE key="sync.2.context"');
-		queries.push('DELETE FROM settings WHERE key="sync.3.context"');
-		queries.push('DELETE FROM settings WHERE key="sync.4.context"');
-		queries.push('DELETE FROM settings WHERE key="sync.5.context"');
-		queries.push('DELETE FROM settings WHERE key="sync.6.context"');
-		queries.push('DELETE FROM settings WHERE key="sync.7.context"');
-
-		queries.push('DELETE FROM settings WHERE key="revisionService.lastProcessedChangeId"');
-		queries.push('DELETE FROM settings WHERE key="resourceService.lastProcessedChangeId"');
-		queries.push('DELETE FROM settings WHERE key="searchEngine.lastProcessedChangeId"');
+		const settingKeys = [
+			'sync.1.context',
+			'sync.2.context',
+			'sync.3.context',
+			'sync.4.context',
+			'sync.5.context',
+			'sync.6.context',
+			'sync.7.context',
+			'revisionService.lastProcessedChangeId',
+			'resourceService.lastProcessedChangeId',
+			'searchEngine.lastProcessedChangeId',
+		];
+		for (const key of settingKeys) queries.push(kysely.deleteFrom('settings').where('key', '=', key));
 
 		await this.transactionExecBatch(queries);
 	}
@@ -321,15 +335,15 @@ export default class JoplinDatabase extends Database {
 	}
 
 	private async countFields(tableName: string): Promise<number> {
-		const pragmas = await this.selectAll(`PRAGMA table_info("${tableName}")`);
+		const pragmas = await this.selectAll(tableInfoQuery(tableName));
 		if (!pragmas) throw new Error(`No such table: ${tableName}`);
 		return pragmas.length;
 	}
 
 	public async refreshTableFields(newVersion: number) {
 		this.logger().info('Initializing tables...');
-		const queries: SqlQuery[] = [];
-		queries.push(this.wrapQuery('DELETE FROM table_fields'));
+		const queries: QueryInput[] = [];
+		queries.push(kysely.deleteFrom('table_fields'));
 
 		const countFieldsNotesFts = await this.countFields('notes_fts');
 		const countFieldsItemsFts = await this.countFields('items_fts');
@@ -341,7 +355,7 @@ export default class JoplinDatabase extends Database {
 			name: string;
 		}
 
-		const tableRows: TableRow[] = await this.selectAll('SELECT name FROM sqlite_master WHERE type=\'table\'');
+		const tableRows: TableRow[] = await this.selectAll(kysely.selectFrom('sqlite_master').select('name').where('type', '=', 'table'));
 
 		for (let i = 0; i < tableRows.length; i++) {
 			let pragmas: Row[] = [];
@@ -356,15 +370,11 @@ export default class JoplinDatabase extends Database {
 				if (tableName === 'search_aux') continue;
 				if (tableName.startsWith('note_embeddings_vec')) continue;
 
-				pragmas = await this.selectAll(`PRAGMA table_info("${tableName}")`);
+				pragmas = await this.selectAll(tableInfoQuery(tableName));
 
 				for (let i = 0; i < pragmas.length; i++) {
 					const item = pragmas[i];
-					// In SQLite, if the default value is a string it has double quotes around it, so remove them here
-					let defaultValue = item.dflt_value;
-					if (typeof defaultValue === 'string' && defaultValue.length >= 2 && defaultValue[0] === '"' && defaultValue[defaultValue.length - 1] === '"') {
-						defaultValue = defaultValue.substr(1, defaultValue.length - 2);
-					}
+					const defaultValue = unquoteDefaultValue(item.dflt_value);
 					const q = Database.insertQuery('table_fields', {
 						table_name: tableName,
 						field_name: item.name,
@@ -379,7 +389,7 @@ export default class JoplinDatabase extends Database {
 			}
 		}
 
-		queries.push({ sql: 'UPDATE version SET table_fields_version = ?', params: [newVersion] });
+		queries.push(kysely.updateTable('version').set({ table_fields_version: newVersion }));
 		await this.transactionExecBatch(queries);
 	}
 
@@ -424,119 +434,110 @@ export default class JoplinDatabase extends Database {
 			const targetVersion = existingDatabaseVersions[currentVersionIndex + 1];
 			this.logger().info(`Converting database to version ${targetVersion}`);
 
-			let queries: (SqlQuery|string)[] = [];
+			let queries: QueryInput[] = [];
 
 			if (targetVersion === 1) {
-				queries = this.wrapQueries(sqlStringToLines(structureSql));
+				queries = structureQueries();
 			}
 
 			if (targetVersion === 2) {
-				const newTableSql = `
-					CREATE TABLE deleted_items (
-						id INTEGER PRIMARY KEY,
-						item_type INT NOT NULL,
-						item_id TEXT NOT NULL,
-						deleted_time INT NOT NULL,
-						sync_target INT NOT NULL
-					);
-				`;
-
-				queries.push({ sql: 'DROP TABLE deleted_items' });
-				queries.push({ sql: sqlStringToLines(newTableSql)[0] });
-				queries.push({ sql: 'CREATE INDEX deleted_items_sync_target ON deleted_items (sync_target)' });
+				queries.push(kysely.schema.dropTable('deleted_items'));
+				queries.push(createTableQuery('deleted_items', [
+					column('id', 'integer', { primaryKey: true }),
+					column('item_type', 'int', { notNull: true }),
+					column('item_id', 'text', { notNull: true }),
+					column('deleted_time', 'int', { notNull: true }),
+					column('sync_target', 'int', { notNull: true }),
+				]));
+				queries.push(createIndexQuery('deleted_items_sync_target', 'deleted_items', ['sync_target']));
 			}
 
 			if (targetVersion === 3) {
-				queries = this.alterColumnQueries('settings', { key: 'TEXT PRIMARY KEY', value: 'TEXT' });
+				queries = alterColumnQueries('settings', [column('key', 'text', { primaryKey: true }), column('value', 'text')]);
 			}
 
 			if (targetVersion === 4) {
-				queries.push('INSERT INTO settings (`key`, `value`) VALUES (\'sync.3.context\', (SELECT `value` FROM settings WHERE `key` = \'sync.context\'))');
-				queries.push('DELETE FROM settings WHERE `key` = \'sync.context\'');
+				queries.push(insertInto('settings', { key: 'sync.3.context', value: kysely.selectFrom('settings').select('value').where('key', '=', 'sync.context') }));
+				queries.push(kysely.deleteFrom('settings').where('key', '=', 'sync.context'));
 			}
 
 			if (targetVersion === 5) {
 				const tableNames = ['notes', 'folders', 'tags', 'note_tags', 'resources'];
 				for (let i = 0; i < tableNames.length; i++) {
 					const n = tableNames[i];
-					queries.push(`ALTER TABLE ${n} ADD COLUMN user_created_time INT NOT NULL DEFAULT 0`);
-					queries.push(`ALTER TABLE ${n} ADD COLUMN user_updated_time INT NOT NULL DEFAULT 0`);
-					queries.push(`UPDATE ${n} SET user_created_time = created_time`);
-					queries.push(`UPDATE ${n} SET user_updated_time = updated_time`);
-					queries.push(`CREATE INDEX ${n}_user_updated_time ON ${n} (user_updated_time)`);
+					queries.push(addColumnQuery(n, intColumn('user_created_time')));
+					queries.push(addColumnQuery(n, intColumn('user_updated_time')));
+					queries.push(dynamicKysely.updateTable(n).set(eb => ({ user_created_time: eb.ref('created_time') })));
+					queries.push(dynamicKysely.updateTable(n).set(eb => ({ user_updated_time: eb.ref('updated_time') })));
+					queries.push(createIndexQuery(`${n}_user_updated_time`, n, ['user_updated_time']));
 				}
 			}
 
 			if (targetVersion === 6) {
-				queries.push('CREATE TABLE alarms (id INTEGER PRIMARY KEY AUTOINCREMENT, note_id TEXT NOT NULL, trigger_time INT NOT NULL)');
-				queries.push('CREATE INDEX alarm_note_id ON alarms (note_id)');
+				queries.push(createTableQuery('alarms', [
+					column('id', 'integer', { primaryKey: true, autoIncrement: true }),
+					column('note_id', 'text', { notNull: true }),
+					column('trigger_time', 'int', { notNull: true }),
+				]));
+				queries.push(createIndexQuery('alarm_note_id', 'alarms', ['note_id']));
 			}
 
 			if (targetVersion === 7) {
-				queries.push('ALTER TABLE resources ADD COLUMN file_extension TEXT NOT NULL DEFAULT ""');
+				queries.push(addColumnQuery('resources', textColumn('file_extension')));
 			}
 
 			if (targetVersion === 8) {
-				queries.push('ALTER TABLE sync_items ADD COLUMN sync_disabled INT NOT NULL DEFAULT "0"');
-				queries.push('ALTER TABLE sync_items ADD COLUMN sync_disabled_reason TEXT NOT NULL DEFAULT ""');
+				queries.push(addColumnQuery('sync_items', intColumn('sync_disabled', '0')));
+				queries.push(addColumnQuery('sync_items', textColumn('sync_disabled_reason')));
 			}
 
 			if (targetVersion === 9) {
-				const newTableSql = `
-					CREATE TABLE master_keys (
-						id TEXT PRIMARY KEY,
-						created_time INT NOT NULL,
-						updated_time INT NOT NULL,
-						source_application TEXT NOT NULL,
-						encryption_method INT NOT NULL,
-						checksum TEXT NOT NULL,
-						content TEXT NOT NULL
-					);
-				`;
-				queries.push(sqlStringToLines(newTableSql)[0]);
+				queries.push(createTableQuery('master_keys', [
+					column('id', 'text', { primaryKey: true }),
+					column('created_time', 'int', { notNull: true }),
+					column('updated_time', 'int', { notNull: true }),
+					column('source_application', 'text', { notNull: true }),
+					column('encryption_method', 'int', { notNull: true }),
+					column('checksum', 'text', { notNull: true }),
+					column('content', 'text', { notNull: true }),
+				]));
 				const tableNames = ['notes', 'folders', 'tags', 'note_tags', 'resources'];
 				for (let i = 0; i < tableNames.length; i++) {
 					const n = tableNames[i];
-					queries.push(`ALTER TABLE ${n} ADD COLUMN encryption_cipher_text TEXT NOT NULL DEFAULT ""`);
-					queries.push(`ALTER TABLE ${n} ADD COLUMN encryption_applied INT NOT NULL DEFAULT 0`);
-					queries.push(`CREATE INDEX ${n}_encryption_applied ON ${n} (encryption_applied)`);
+					queries.push(addColumnQuery(n, textColumn('encryption_cipher_text')));
+					queries.push(addColumnQuery(n, intColumn('encryption_applied')));
+					queries.push(createIndexQuery(`${n}_encryption_applied`, n, ['encryption_applied']));
 				}
 
-				queries.push('ALTER TABLE sync_items ADD COLUMN force_sync INT NOT NULL DEFAULT 0');
-				queries.push('ALTER TABLE resources ADD COLUMN encryption_blob_encrypted INT NOT NULL DEFAULT 0');
+				queries.push(addColumnQuery('sync_items', intColumn('force_sync')));
+				queries.push(addColumnQuery('resources', intColumn('encryption_blob_encrypted')));
 			}
 
 			const upgradeVersion10 = () => {
-				const itemChangesTable = `
-					CREATE TABLE item_changes (
-						id INTEGER PRIMARY KEY AUTOINCREMENT,
-						item_type INT NOT NULL,
-						item_id TEXT NOT NULL,
-						type INT NOT NULL,
-						created_time INT NOT NULL
-					);
-				`;
+				queries.push(createTableQuery('item_changes', [
+					column('id', 'integer', { primaryKey: true, autoIncrement: true }),
+					column('item_type', 'int', { notNull: true }),
+					column('item_id', 'text', { notNull: true }),
+					column('type', 'int', { notNull: true }),
+					column('created_time', 'int', { notNull: true }),
+				]));
+				queries.push(createIndexQuery('item_changes_item_id', 'item_changes', ['item_id']));
+				queries.push(createIndexQuery('item_changes_created_time', 'item_changes', ['created_time']));
+				queries.push(createIndexQuery('item_changes_item_type', 'item_changes', ['item_type']));
 
-				const noteResourcesTable = `
-					CREATE TABLE note_resources (
-						id INTEGER PRIMARY KEY,
-						note_id TEXT NOT NULL,
-						resource_id TEXT NOT NULL,
-						is_associated INT NOT NULL,
-						last_seen_time INT NOT NULL
-					);
-				`;
+				queries.push(createTableQuery('note_resources', [
+					column('id', 'integer', { primaryKey: true }),
+					column('note_id', 'text', { notNull: true }),
+					column('resource_id', 'text', { notNull: true }),
+					column('is_associated', 'int', { notNull: true }),
+					column('last_seen_time', 'int', { notNull: true }),
+				]));
+				queries.push(createIndexQuery('note_resources_note_id', 'note_resources', ['note_id']));
+				queries.push(createIndexQuery('note_resources_resource_id', 'note_resources', ['resource_id']));
 
-				queries.push(sqlStringToLines(itemChangesTable)[0]);
-				queries.push('CREATE INDEX item_changes_item_id ON item_changes (item_id)');
-				queries.push('CREATE INDEX item_changes_created_time ON item_changes (created_time)');
-				queries.push('CREATE INDEX item_changes_item_type ON item_changes (item_type)');
-
-				queries.push(sqlStringToLines(noteResourcesTable)[0]);
-				queries.push('CREATE INDEX note_resources_note_id ON note_resources (note_id)');
-				queries.push('CREATE INDEX note_resources_resource_id ON note_resources (resource_id)');
-
-				queries.push({ sql: 'INSERT INTO item_changes (item_type, item_id, type, created_time) SELECT 1, id, 1, ? FROM notes', params: [Date.now()] });
+				queries.push(kysely.insertInto('item_changes')
+					.columns(['item_type', 'item_id', 'type', 'created_time'])
+					.expression(kysely.selectFrom('notes').select(eb => [eb.lit(1).as('item_type'), 'id', eb.lit(1).as('type'), eb.val(Date.now()).as('created_time')])));
 			};
 
 			if (targetVersion === 10) {
@@ -547,218 +548,172 @@ export default class JoplinDatabase extends Database {
 				// This trick was needed because Electron Builder incorrectly released a dev branch containing v10 as it was
 				// still being developed, and the db schema was not final at that time. So this v11 was created to
 				// make sure any invalid db schema that was accidentally created was deleted and recreated.
-				queries.push('DROP TABLE item_changes');
-				queries.push('DROP TABLE note_resources');
+				queries.push(kysely.schema.dropTable('item_changes'));
+				queries.push(kysely.schema.dropTable('note_resources'));
 				upgradeVersion10();
 			}
 
 			if (targetVersion === 12) {
-				queries.push('ALTER TABLE folders ADD COLUMN parent_id TEXT NOT NULL DEFAULT ""');
+				queries.push(addColumnQuery('folders', textColumn('parent_id')));
 			}
 
 			if (targetVersion === 13) {
-				queries.push('ALTER TABLE resources ADD COLUMN fetch_status INT NOT NULL DEFAULT "2"');
-				queries.push('ALTER TABLE resources ADD COLUMN fetch_error TEXT NOT NULL DEFAULT ""');
-				queries.push({ sql: 'UPDATE resources SET fetch_status = ?', params: [Resource.FETCH_STATUS_DONE] });
+				queries.push(addColumnQuery('resources', intColumn('fetch_status', '2')));
+				queries.push(addColumnQuery('resources', textColumn('fetch_error')));
+				queries.push(dynamicKysely.updateTable('resources').set({ fetch_status: Resource.FETCH_STATUS_DONE }));
 			}
 
 			if (targetVersion === 14) {
-				const resourceLocalStates = `
-					CREATE TABLE resource_local_states (
-						id INTEGER PRIMARY KEY,
-						resource_id TEXT NOT NULL,
-						fetch_status INT NOT NULL DEFAULT "2",
-						fetch_error TEXT NOT NULL DEFAULT ""
-					);
-				`;
+				queries.push(createTableQuery('resource_local_states', [
+					column('id', 'integer', { primaryKey: true }),
+					column('resource_id', 'text', { notNull: true }),
+					intColumn('fetch_status', '2'),
+					textColumn('fetch_error'),
+				]));
 
-				queries.push(sqlStringToLines(resourceLocalStates)[0]);
+				queries.push(kysely.insertInto('resource_local_states').expression(
+					dynamicKysely.selectFrom('resources').select(eb => [eb.lit(null).as('id'), 'id as resource_id', 'fetch_status', 'fetch_error']),
+				));
 
-				queries.push('INSERT INTO resource_local_states SELECT null, id, fetch_status, fetch_error FROM resources');
-
-				queries.push('CREATE INDEX resource_local_states_resource_id ON resource_local_states (resource_id)');
-				queries.push('CREATE INDEX resource_local_states_resource_fetch_status ON resource_local_states (fetch_status)');
+				queries.push(createIndexQuery('resource_local_states_resource_id', 'resource_local_states', ['resource_id']));
+				queries.push(createIndexQuery('resource_local_states_resource_fetch_status', 'resource_local_states', ['fetch_status']));
 
 				queries = queries.concat(
-					this.alterColumnQueries('resources', {
-						id: 'TEXT PRIMARY KEY',
-						title: 'TEXT NOT NULL DEFAULT ""',
-						mime: 'TEXT NOT NULL',
-						filename: 'TEXT NOT NULL DEFAULT ""',
-						created_time: 'INT NOT NULL',
-						updated_time: 'INT NOT NULL',
-						user_created_time: 'INT NOT NULL DEFAULT 0',
-						user_updated_time: 'INT NOT NULL DEFAULT 0',
-						file_extension: 'TEXT NOT NULL DEFAULT ""',
-						encryption_cipher_text: 'TEXT NOT NULL DEFAULT ""',
-						encryption_applied: 'INT NOT NULL DEFAULT 0',
-						encryption_blob_encrypted: 'INT NOT NULL DEFAULT 0',
-					}),
+					alterColumnQueries('resources', [
+						column('id', 'text', { primaryKey: true }),
+						textColumn('title'),
+						column('mime', 'text', { notNull: true }),
+						textColumn('filename'),
+						column('created_time', 'int', { notNull: true }),
+						column('updated_time', 'int', { notNull: true }),
+						intColumn('user_created_time'),
+						intColumn('user_updated_time'),
+						textColumn('file_extension'),
+						textColumn('encryption_cipher_text'),
+						intColumn('encryption_applied'),
+						intColumn('encryption_blob_encrypted'),
+					]),
 				);
 			}
 
 			if (targetVersion === 15) {
-				queries.push('CREATE VIRTUAL TABLE notes_fts USING fts4(content="notes", notindexed="id", id, title, body)');
-				queries.push('INSERT INTO notes_fts(docid, id, title, body) SELECT rowid, id, title, body FROM notes WHERE is_conflict = 0 AND encryption_applied = 0');
+				const columnNames = ['id', 'title', 'body'];
+				queries.push(createFtsTableQuery('notes_fts', ['content="notes"', 'notindexed="id"'], columnNames));
+				queries.push(ftsInitialIndexQuery('notes_fts', 'notes', columnNames, 'is_conflict = 0 AND encryption_applied = 0'));
 
 				// Keep the content tables (notes) and the FTS table (notes_fts) in sync.
-				// More info at https://www.sqlite.org/fts3.html#_external_content_fts4_tables_
-				queries.push(`
-					CREATE TRIGGER notes_fts_before_update BEFORE UPDATE ON notes BEGIN
-						DELETE FROM notes_fts WHERE docid=old.rowid;
-					END;`);
-				queries.push(`
-					CREATE TRIGGER notes_fts_before_delete BEFORE DELETE ON notes BEGIN
-						DELETE FROM notes_fts WHERE docid=old.rowid;
-					END;`);
-				queries.push(`
-					CREATE TRIGGER notes_after_update AFTER UPDATE ON notes BEGIN
-						INSERT INTO notes_fts(docid, id, title, body) SELECT rowid, id, title, body FROM notes WHERE is_conflict = 0 AND encryption_applied = 0 AND new.rowid = notes.rowid;
-					END;`);
-				queries.push(`
-					CREATE TRIGGER notes_after_insert AFTER INSERT ON notes BEGIN
-						INSERT INTO notes_fts(docid, id, title, body) SELECT rowid, id, title, body FROM notes WHERE is_conflict = 0 AND encryption_applied = 0 AND new.rowid = notes.rowid;
-					END;`);
+				queries = queries.concat(createFtsTriggerQueries({
+					ftsTableName: 'notes_fts',
+					contentTableName: 'notes',
+					columnNames,
+					triggerNames: notesFtsTriggerNames,
+					indexCondition: 'is_conflict = 0 AND encryption_applied = 0',
+				}));
 			}
 
 			if (targetVersion === 18) {
-				const notesNormalized = `
-					CREATE TABLE notes_normalized (
-						id TEXT NOT NULL,
-						title TEXT NOT NULL DEFAULT "",
-						body TEXT NOT NULL DEFAULT "" 
-					);
-				`;
+				queries.push(createTableQuery('notes_normalized', [
+					column('id', 'text', { notNull: true }),
+					textColumn('title'),
+					textColumn('body'),
+				]));
 
-				queries.push(sqlStringToLines(notesNormalized)[0]);
+				queries.push(createIndexQuery('notes_normalized_id', 'notes_normalized', ['id']));
 
-				queries.push('CREATE INDEX notes_normalized_id ON notes_normalized (id)');
+				for (const triggerName of notesFtsTriggerNames) queries.push(dropTriggerQuery(triggerName, true));
+				queries.push(kysely.schema.dropTable('notes_fts').ifExists());
 
-				queries.push('DROP TRIGGER IF EXISTS notes_fts_before_update');
-				queries.push('DROP TRIGGER IF EXISTS notes_fts_before_delete');
-				queries.push('DROP TRIGGER IF EXISTS notes_after_update');
-				queries.push('DROP TRIGGER IF EXISTS notes_after_insert');
-				queries.push('DROP TABLE IF EXISTS notes_fts');
-
-				queries.push('CREATE VIRTUAL TABLE notes_fts USING fts4(content="notes_normalized", notindexed="id", id, title, body)');
+				const columnNames = ['id', 'title', 'body'];
+				queries.push(createFtsTableQuery('notes_fts', ['content="notes_normalized"', 'notindexed="id"'], columnNames));
 
 				// Keep the content tables (notes) and the FTS table (notes_fts) in sync.
-				// More info at https://www.sqlite.org/fts3.html#_external_content_fts4_tables_
-				queries.push(`
-					CREATE TRIGGER notes_fts_before_update BEFORE UPDATE ON notes_normalized BEGIN
-						DELETE FROM notes_fts WHERE docid=old.rowid;
-					END;`);
-				queries.push(`
-					CREATE TRIGGER notes_fts_before_delete BEFORE DELETE ON notes_normalized BEGIN
-						DELETE FROM notes_fts WHERE docid=old.rowid;
-					END;`);
-				queries.push(`
-					CREATE TRIGGER notes_after_update AFTER UPDATE ON notes_normalized BEGIN
-						INSERT INTO notes_fts(docid, id, title, body) SELECT rowid, id, title, body FROM notes_normalized WHERE new.rowid = notes_normalized.rowid;
-					END;`);
-				queries.push(`
-					CREATE TRIGGER notes_after_insert AFTER INSERT ON notes_normalized BEGIN
-						INSERT INTO notes_fts(docid, id, title, body) SELECT rowid, id, title, body FROM notes_normalized WHERE new.rowid = notes_normalized.rowid;
-					END;`);
+				queries = queries.concat(createFtsTriggerQueries({
+					ftsTableName: 'notes_fts',
+					contentTableName: 'notes_normalized',
+					columnNames,
+					triggerNames: notesFtsTriggerNames,
+				}));
 			}
 
 			if (targetVersion === 19) {
-				const newTableSql = `
-					CREATE TABLE revisions (
-						id TEXT PRIMARY KEY,
-						parent_id TEXT NOT NULL DEFAULT "",
-						item_type INT NOT NULL,
-						item_id TEXT NOT NULL,
-						item_updated_time INT NOT NULL,
-						title_diff TEXT NOT NULL DEFAULT "",
-						body_diff TEXT NOT NULL DEFAULT "",
-						metadata_diff TEXT NOT NULL DEFAULT "",
-						encryption_cipher_text TEXT NOT NULL DEFAULT "",
-						encryption_applied INT NOT NULL DEFAULT 0,
-						updated_time INT NOT NULL,
-						created_time INT NOT NULL
-					);
-				`;
-				queries.push(sqlStringToLines(newTableSql)[0]);
+				queries.push(createTableQuery('revisions', [
+					column('id', 'text', { primaryKey: true }),
+					textColumn('parent_id'),
+					column('item_type', 'int', { notNull: true }),
+					column('item_id', 'text', { notNull: true }),
+					column('item_updated_time', 'int', { notNull: true }),
+					textColumn('title_diff'),
+					textColumn('body_diff'),
+					textColumn('metadata_diff'),
+					textColumn('encryption_cipher_text'),
+					intColumn('encryption_applied'),
+					column('updated_time', 'int', { notNull: true }),
+					column('created_time', 'int', { notNull: true }),
+				]));
 
-				queries.push('CREATE INDEX revisions_parent_id ON revisions (parent_id)');
-				queries.push('CREATE INDEX revisions_item_type ON revisions (item_type)');
-				queries.push('CREATE INDEX revisions_item_id ON revisions (item_id)');
-				queries.push('CREATE INDEX revisions_item_updated_time ON revisions (item_updated_time)');
-				queries.push('CREATE INDEX revisions_updated_time ON revisions (updated_time)');
+				queries.push(createIndexQuery('revisions_parent_id', 'revisions', ['parent_id']));
+				queries.push(createIndexQuery('revisions_item_type', 'revisions', ['item_type']));
+				queries.push(createIndexQuery('revisions_item_id', 'revisions', ['item_id']));
+				queries.push(createIndexQuery('revisions_item_updated_time', 'revisions', ['item_updated_time']));
+				queries.push(createIndexQuery('revisions_updated_time', 'revisions', ['updated_time']));
 
-				queries.push('ALTER TABLE item_changes ADD COLUMN source INT NOT NULL DEFAULT 1');
-				queries.push('ALTER TABLE item_changes ADD COLUMN before_change_item TEXT NOT NULL DEFAULT ""');
+				queries.push(addColumnQuery('item_changes', intColumn('source', 1)));
+				queries.push(addColumnQuery('item_changes', textColumn('before_change_item')));
 			}
 
 			if (targetVersion === 20) {
-				const newTableSql = `
-					CREATE TABLE migrations (
-						id INTEGER PRIMARY KEY,
-						number INTEGER NOT NULL,
-						updated_time INT NOT NULL,
-						created_time INT NOT NULL
-					);
-				`;
-				queries.push(sqlStringToLines(newTableSql)[0]);
+				queries.push(createTableQuery('migrations', [
+					column('id', 'integer', { primaryKey: true }),
+					column('number', 'integer', { notNull: true }),
+					column('updated_time', 'int', { notNull: true }),
+					column('created_time', 'int', { notNull: true }),
+				]));
 
-				queries.push('ALTER TABLE resources ADD COLUMN `size` INT NOT NULL DEFAULT -1');
+				queries.push(addColumnQuery('resources', intColumn('size', -1)));
 				queries.push(addMigrationFile(20));
 			}
 
 			if (targetVersion === 21) {
-				queries.push('ALTER TABLE sync_items ADD COLUMN item_location INT NOT NULL DEFAULT 1');
+				queries.push(addColumnQuery('sync_items', intColumn('item_location', 1)));
 			}
 
 			if (targetVersion === 22) {
-				const newTableSql = `
-					CREATE TABLE resources_to_download (
-						id INTEGER PRIMARY KEY,
-						resource_id TEXT NOT NULL,
-						updated_time INT NOT NULL,
-						created_time INT NOT NULL
-					);
-				`;
-				queries.push(sqlStringToLines(newTableSql)[0]);
+				queries.push(createTableQuery('resources_to_download', [
+					column('id', 'integer', { primaryKey: true }),
+					column('resource_id', 'text', { notNull: true }),
+					column('updated_time', 'int', { notNull: true }),
+					column('created_time', 'int', { notNull: true }),
+				]));
 
-				queries.push('CREATE INDEX resources_to_download_resource_id ON resources_to_download (resource_id)');
-				queries.push('CREATE INDEX resources_to_download_updated_time ON resources_to_download (updated_time)');
+				queries.push(createIndexQuery('resources_to_download_resource_id', 'resources_to_download', ['resource_id']));
+				queries.push(createIndexQuery('resources_to_download_updated_time', 'resources_to_download', ['updated_time']));
 			}
 
 			if (targetVersion === 23) {
-				const newTableSql = `
-					CREATE TABLE key_values (
-						id INTEGER PRIMARY KEY,
-						\`key\` TEXT NOT NULL,
-						\`value\` TEXT NOT NULL,
-						\`type\` INT NOT NULL,
-						updated_time INT NOT NULL
-					);
-				`;
-				queries.push(sqlStringToLines(newTableSql)[0]);
+				queries.push(createTableQuery('key_values', [
+					column('id', 'integer', { primaryKey: true }),
+					column('key', 'text', { notNull: true }),
+					column('value', 'text', { notNull: true }),
+					column('type', 'int', { notNull: true }),
+					column('updated_time', 'int', { notNull: true }),
+				]));
 
-				queries.push('CREATE UNIQUE INDEX key_values_key ON key_values (key)');
+				queries.push(createIndexQuery('key_values_key', 'key_values', ['key'], { unique: true }));
 			}
 
 			if (targetVersion === 24) {
-				queries.push('ALTER TABLE notes ADD COLUMN `markup_language` INT NOT NULL DEFAULT 1'); // 1: Markdown, 2: HTML
+				queries.push(addColumnQuery('notes', intColumn('markup_language', 1))); // 1: Markdown, 2: HTML
 			}
 
 			if (targetVersion === 25) {
-				queries.push(`CREATE VIEW tags_with_note_count AS 
-						SELECT tags.id as id, tags.title as title, tags.created_time as created_time, tags.updated_time as updated_time, COUNT(notes.id) as note_count 
-						FROM tags 
-							LEFT JOIN note_tags nt on nt.tag_id = tags.id 
-							LEFT JOIN notes on notes.id = nt.note_id 
-						WHERE notes.id IS NOT NULL 
-						GROUP BY tags.id`);
+				queries.push(createTagsWithNoteCountView({ todoCompletedCount: false, excludeDeletedNotes: false }));
 			}
 
 			if (targetVersion === 26) {
 				const tableNames = ['notes', 'folders', 'tags', 'note_tags', 'resources'];
 				for (let i = 0; i < tableNames.length; i++) {
 					const n = tableNames[i];
-					queries.push(`ALTER TABLE ${n} ADD COLUMN is_shared INT NOT NULL DEFAULT 0`);
+					queries.push(addColumnQuery(n, intColumn('is_shared')));
 				}
 			}
 
@@ -767,11 +722,11 @@ export default class JoplinDatabase extends Database {
 			}
 
 			if (targetVersion === 28) {
-				queries.push('CREATE INDEX resources_size ON resources(size)');
+				queries.push(createIndexQuery('resources_size', 'resources', ['size']));
 			}
 
 			if (targetVersion === 29) {
-				queries.push('ALTER TABLE version ADD COLUMN table_fields_version INT NOT NULL DEFAULT 0');
+				queries.push(addColumnQuery('version', intColumn('table_fields_version')));
 			}
 
 			if (targetVersion === 30) {
@@ -781,33 +736,33 @@ export default class JoplinDatabase extends Database {
 				// note B with order 1001 wouldn't be possible without changing the order
 				// value of note A or B. But with a float, we can set the order of note C to 1000.5
 				queries = queries.concat(
-					this.alterColumnQueries('notes', {
-						id: 'TEXT PRIMARY KEY',
-						parent_id: 'TEXT NOT NULL DEFAULT ""',
-						title: 'TEXT NOT NULL DEFAULT ""',
-						body: 'TEXT NOT NULL DEFAULT ""',
-						created_time: 'INT NOT NULL',
-						updated_time: 'INT NOT NULL',
-						is_conflict: 'INT NOT NULL DEFAULT 0',
-						latitude: 'NUMERIC NOT NULL DEFAULT 0',
-						longitude: 'NUMERIC NOT NULL DEFAULT 0',
-						altitude: 'NUMERIC NOT NULL DEFAULT 0',
-						author: 'TEXT NOT NULL DEFAULT ""',
-						source_url: 'TEXT NOT NULL DEFAULT ""',
-						is_todo: 'INT NOT NULL DEFAULT 0',
-						todo_due: 'INT NOT NULL DEFAULT 0',
-						todo_completed: 'INT NOT NULL DEFAULT 0',
-						source: 'TEXT NOT NULL DEFAULT ""',
-						source_application: 'TEXT NOT NULL DEFAULT ""',
-						application_data: 'TEXT NOT NULL DEFAULT ""',
-						order: 'NUMERIC NOT NULL DEFAULT 0', // that's the change!
-						user_created_time: 'INT NOT NULL DEFAULT 0',
-						user_updated_time: 'INT NOT NULL DEFAULT 0',
-						encryption_cipher_text: 'TEXT NOT NULL DEFAULT ""',
-						encryption_applied: 'INT NOT NULL DEFAULT 0',
-						markup_language: 'INT NOT NULL DEFAULT 1',
-						is_shared: 'INT NOT NULL DEFAULT 0',
-					}),
+					alterColumnQueries('notes', [
+						column('id', 'text', { primaryKey: true }),
+						textColumn('parent_id'),
+						textColumn('title'),
+						textColumn('body'),
+						column('created_time', 'int', { notNull: true }),
+						column('updated_time', 'int', { notNull: true }),
+						intColumn('is_conflict'),
+						column('latitude', 'numeric', { notNull: true, default: 0 }),
+						column('longitude', 'numeric', { notNull: true, default: 0 }),
+						column('altitude', 'numeric', { notNull: true, default: 0 }),
+						textColumn('author'),
+						textColumn('source_url'),
+						intColumn('is_todo'),
+						intColumn('todo_due'),
+						intColumn('todo_completed'),
+						textColumn('source'),
+						textColumn('source_application'),
+						textColumn('application_data'),
+						column('order', 'numeric', { notNull: true, default: 0 }), // that's the change!
+						intColumn('user_created_time'),
+						intColumn('user_updated_time'),
+						textColumn('encryption_cipher_text'),
+						intColumn('encryption_applied'),
+						intColumn('markup_language', 1),
+						intColumn('is_shared'),
+					]),
 				);
 			}
 
@@ -815,7 +770,7 @@ export default class JoplinDatabase extends Database {
 				// This empty version is due to the revert of the hierarchical tag feature
 				// We need to keep the version for the users who have upgraded using
 				// the pre-release
-				queries.push('ALTER TABLE tags ADD COLUMN parent_id TEXT NOT NULL DEFAULT ""');
+				queries.push(addColumnQuery('tags', textColumn('parent_id')));
 				// Drop the tag note count view, instead compute note count on the fly
 				// queries.push('DROP VIEW tags_with_note_count');
 				// queries.push(addMigrationFile(31));
@@ -824,139 +779,91 @@ export default class JoplinDatabase extends Database {
 			if (targetVersion === 32) {
 				// This is the same as version 25 - this is to complete the
 				// revert of the hierarchical tag feature.
-				queries.push(`CREATE VIEW IF NOT EXISTS tags_with_note_count AS 
-						SELECT tags.id as id, tags.title as title, tags.created_time as created_time, tags.updated_time as updated_time, COUNT(notes.id) as note_count 
-						FROM tags 
-							LEFT JOIN note_tags nt on nt.tag_id = tags.id 
-							LEFT JOIN notes on notes.id = nt.note_id 
-						WHERE notes.id IS NOT NULL 
-						GROUP BY tags.id`);
+				queries.push(createTagsWithNoteCountView({ todoCompletedCount: false, excludeDeletedNotes: false, ifNotExists: true }));
 			}
 
 			if (targetVersion === 33) {
-				queries.push('DROP TRIGGER notes_fts_before_update');
-				queries.push('DROP TRIGGER notes_fts_before_delete');
-				queries.push('DROP TRIGGER notes_after_update');
-				queries.push('DROP TRIGGER notes_after_insert');
+				for (const triggerName of notesFtsTriggerNames) queries.push(dropTriggerQuery(triggerName));
 
-				queries.push('DROP INDEX notes_normalized_id');
-				queries.push('DROP TABLE notes_normalized');
-				queries.push('DROP TABLE notes_fts');
+				queries.push(kysely.schema.dropIndex('notes_normalized_id'));
+				queries.push(kysely.schema.dropTable('notes_normalized'));
+				queries.push(kysely.schema.dropTable('notes_fts'));
 
+				queries.push(createTableQuery('notes_normalized', [
+					column('id', 'text', { notNull: true }),
+					textColumn('title'),
+					textColumn('body'),
+					intColumn('user_created_time'),
+					intColumn('user_updated_time'),
+					intColumn('is_todo'),
+					intColumn('todo_completed'),
+					textColumn('parent_id'),
+					column('latitude', 'numeric', { notNull: true, default: 0 }),
+					column('longitude', 'numeric', { notNull: true, default: 0 }),
+					column('altitude', 'numeric', { notNull: true, default: 0 }),
+					textColumn('source_url'),
+				]));
 
-				const notesNormalized = `
-					CREATE TABLE notes_normalized (
-						id TEXT NOT NULL,
-						title TEXT NOT NULL DEFAULT "",
-						body TEXT NOT NULL DEFAULT "",
-						user_created_time INT NOT NULL DEFAULT 0,
-						user_updated_time INT NOT NULL DEFAULT 0,
-						is_todo INT NOT NULL DEFAULT 0,
-						todo_completed INT NOT NULL DEFAULT 0,
-						parent_id TEXT NOT NULL DEFAULT "",
-						latitude NUMERIC NOT NULL DEFAULT 0,
-						longitude NUMERIC NOT NULL DEFAULT 0,
-						altitude NUMERIC NOT NULL DEFAULT 0,
-						source_url TEXT NOT NULL DEFAULT ""
-					);
-				`;
+				queries.push(createIndexQuery('notes_normalized_id', 'notes_normalized', ['id']));
 
-				queries.push(sqlStringToLines(notesNormalized)[0]);
+				queries.push(createIndexQuery('notes_normalized_user_created_time', 'notes_normalized', ['user_created_time']));
+				queries.push(createIndexQuery('notes_normalized_user_updated_time', 'notes_normalized', ['user_updated_time']));
+				queries.push(createIndexQuery('notes_normalized_is_todo', 'notes_normalized', ['is_todo']));
+				queries.push(createIndexQuery('notes_normalized_todo_completed', 'notes_normalized', ['todo_completed']));
+				queries.push(createIndexQuery('notes_normalized_parent_id', 'notes_normalized', ['parent_id']));
+				queries.push(createIndexQuery('notes_normalized_latitude', 'notes_normalized', ['latitude']));
+				queries.push(createIndexQuery('notes_normalized_longitude', 'notes_normalized', ['longitude']));
+				queries.push(createIndexQuery('notes_normalized_altitude', 'notes_normalized', ['altitude']));
+				queries.push(createIndexQuery('notes_normalized_source_url', 'notes_normalized', ['source_url']));
 
-				queries.push('CREATE INDEX notes_normalized_id ON notes_normalized (id)');
+				const columnNames = ['id', 'title', 'body', 'user_created_time', 'user_updated_time', 'is_todo', 'todo_completed', 'parent_id', 'latitude', 'longitude', 'altitude', 'source_url'];
+				const notIndexed = ['id', 'user_created_time', 'user_updated_time', 'is_todo', 'todo_completed', 'parent_id', 'latitude', 'longitude', 'altitude', 'source_url'];
 
-				queries.push('CREATE INDEX notes_normalized_user_created_time ON notes_normalized (user_created_time)');
-				queries.push('CREATE INDEX notes_normalized_user_updated_time ON notes_normalized (user_updated_time)');
-				queries.push('CREATE INDEX notes_normalized_is_todo ON notes_normalized (is_todo)');
-				queries.push('CREATE INDEX notes_normalized_todo_completed ON notes_normalized (todo_completed)');
-				queries.push('CREATE INDEX notes_normalized_parent_id ON notes_normalized (parent_id)');
-				queries.push('CREATE INDEX notes_normalized_latitude ON notes_normalized (latitude)');
-				queries.push('CREATE INDEX notes_normalized_longitude ON notes_normalized (longitude)');
-				queries.push('CREATE INDEX notes_normalized_altitude ON notes_normalized (altitude)');
-				queries.push('CREATE INDEX notes_normalized_source_url ON notes_normalized (source_url)');
+				queries.push(createFtsTableQuery('notes_fts', ['content="notes_normalized"', ...notIndexed.map(n => `notindexed="${n}"`)], columnNames));
 
-				const tableFields = 'id, title, body, user_created_time, user_updated_time, is_todo, todo_completed, parent_id, latitude, longitude, altitude, source_url';
-
-
-				const newVirtualTableSql = `
-					CREATE VIRTUAL TABLE notes_fts USING fts4(
-						content="notes_normalized",
-						notindexed="id",
-						notindexed="user_created_time",
-						notindexed="user_updated_time",
-						notindexed="is_todo",
-						notindexed="todo_completed",
-						notindexed="parent_id",
-						notindexed="latitude",
-						notindexed="longitude",
-						notindexed="altitude",
-						notindexed="source_url",
-						${tableFields}
-					);`
-				;
-
-				queries.push(sqlStringToLines(newVirtualTableSql)[0]);
-
-				queries.push(`
-					CREATE TRIGGER notes_fts_before_update BEFORE UPDATE ON notes_normalized BEGIN
-						DELETE FROM notes_fts WHERE docid=old.rowid;
-					END;`);
-				queries.push(`
-					CREATE TRIGGER notes_fts_before_delete BEFORE DELETE ON notes_normalized BEGIN
-						DELETE FROM notes_fts WHERE docid=old.rowid;
-					END;`);
-				queries.push(`
-					CREATE TRIGGER notes_after_update AFTER UPDATE ON notes_normalized BEGIN
-						INSERT INTO notes_fts(docid, ${tableFields}) SELECT rowid, ${tableFields} FROM notes_normalized WHERE new.rowid = notes_normalized.rowid;
-					END;`);
-				queries.push(`
-					CREATE TRIGGER notes_after_insert AFTER INSERT ON notes_normalized BEGIN
-						INSERT INTO notes_fts(docid, ${tableFields}) SELECT rowid, ${tableFields} FROM notes_normalized WHERE new.rowid = notes_normalized.rowid;
-					END;`);
+				queries = queries.concat(createFtsTriggerQueries({
+					ftsTableName: 'notes_fts',
+					contentTableName: 'notes_normalized',
+					columnNames,
+					triggerNames: notesFtsTriggerNames,
+				}));
 				queries.push(addMigrationFile(33));
 			}
 
 			if (targetVersion === 34) {
-				queries.push('CREATE VIRTUAL TABLE search_aux USING fts4aux(notes_fts)');
-				queries.push('CREATE VIRTUAL TABLE notes_spellfix USING spellfix1');
+				queries.push(createVirtualTableQuery('search_aux', 'fts4aux(notes_fts)'));
+				queries.push(createVirtualTableQuery('notes_spellfix', 'spellfix1'));
 			}
 
 			if (targetVersion === 35) {
-				queries.push('ALTER TABLE notes_normalized ADD COLUMN todo_due INT NOT NULL DEFAULT 0');
-				queries.push('CREATE INDEX notes_normalized_todo_due ON notes_normalized (todo_due)');
+				queries.push(addColumnQuery('notes_normalized', intColumn('todo_due')));
+				queries.push(createIndexQuery('notes_normalized_todo_due', 'notes_normalized', ['todo_due']));
 				queries.push(addMigrationFile(35));
 			}
 
 			if (targetVersion === 36) {
-				queries.push('ALTER TABLE folders ADD COLUMN share_id TEXT NOT NULL DEFAULT ""');
-				queries.push('ALTER TABLE notes ADD COLUMN share_id TEXT NOT NULL DEFAULT ""');
-				queries.push('ALTER TABLE resources ADD COLUMN share_id TEXT NOT NULL DEFAULT ""');
+				queries.push(addColumnQuery('folders', textColumn('share_id')));
+				queries.push(addColumnQuery('notes', textColumn('share_id')));
+				queries.push(addColumnQuery('resources', textColumn('share_id')));
 			}
 
 			if (targetVersion === 38) {
-				queries.push('DROP VIEW tags_with_note_count');
-				queries.push(`CREATE VIEW tags_with_note_count AS 
-						SELECT tags.id as id, tags.title as title, tags.created_time as created_time, tags.updated_time as updated_time, COUNT(notes.id) as note_count, 
-							SUM(CASE WHEN notes.todo_completed > 0 THEN 1 ELSE 0 END) AS todo_completed_count
-						FROM tags 
-							LEFT JOIN note_tags nt on nt.tag_id = tags.id 
-							LEFT JOIN notes on notes.id = nt.note_id 
-						WHERE notes.id IS NOT NULL 
-						GROUP BY tags.id`);
+				queries.push(kysely.schema.dropView('tags_with_note_count'));
+				queries.push(createTagsWithNoteCountView({ todoCompletedCount: true, excludeDeletedNotes: false }));
 			}
 
 			if (targetVersion === 39) {
-				queries.push('ALTER TABLE `notes` ADD COLUMN conflict_original_id TEXT NOT NULL DEFAULT ""');
+				queries.push(addColumnQuery('notes', textColumn('conflict_original_id')));
 			}
 
 			if (targetVersion === 40) {
-				queries.push('ALTER TABLE `folders` ADD COLUMN master_key_id TEXT NOT NULL DEFAULT ""');
-				queries.push('ALTER TABLE `notes` ADD COLUMN master_key_id TEXT NOT NULL DEFAULT ""');
-				queries.push('ALTER TABLE `resources` ADD COLUMN master_key_id TEXT NOT NULL DEFAULT ""');
+				queries.push(addColumnQuery('folders', textColumn('master_key_id')));
+				queries.push(addColumnQuery('notes', textColumn('master_key_id')));
+				queries.push(addColumnQuery('resources', textColumn('master_key_id')));
 			}
 
 			if (targetVersion === 41) {
-				queries.push('ALTER TABLE `folders` ADD COLUMN icon TEXT NOT NULL DEFAULT ""');
+				queries.push(addColumnQuery('folders', textColumn('icon')));
 			}
 
 			if (targetVersion > 41) {
@@ -966,7 +873,7 @@ export default class JoplinDatabase extends Database {
 				queries = queries.concat(migrationQueries);
 			}
 
-			const updateVersionQuery = { sql: 'UPDATE version SET version = ?', params: [targetVersion] };
+			const updateVersionQuery = kysely.updateTable('version').set({ version: targetVersion });
 
 			queries.push(updateVersionQuery);
 
@@ -1004,7 +911,7 @@ export default class JoplinDatabase extends Database {
 
 	public async ftsEnabled() {
 		try {
-			await this.selectOne('SELECT count(*) FROM notes_fts');
+			await this.selectOne(kysely.selectFrom('notes_fts').select(eb => eb.fn.countAll().as('total')));
 		} catch (error) {
 			this.logger().warn('FTS check failed', error);
 			return false;
@@ -1017,7 +924,7 @@ export default class JoplinDatabase extends Database {
 
 	public async fuzzySearchEnabled() {
 		try {
-			await this.selectOne('SELECT count(*) FROM notes_spellfix');
+			await this.selectOne(dynamicKysely.selectFrom('notes_spellfix').select(eb => eb.fn.countAll().as('total')));
 		} catch (error) {
 			this.logger().warn('Fuzzy search check failed', error);
 			return false;
@@ -1036,7 +943,7 @@ export default class JoplinDatabase extends Database {
 		let versionRow = null;
 		try {
 			// Will throw if the database has not been created yet, but this is handled below
-			versionRow = await this.selectOne('SELECT * FROM version LIMIT 1');
+			versionRow = await this.selectOne(kysely.selectFrom('version').selectAll().limit(1));
 		} catch (error) {
 			if (error.message && error.message.indexOf('no such table: version') >= 0) {
 				// Ignore
@@ -1059,7 +966,7 @@ export default class JoplinDatabase extends Database {
 
 		this.tableFields_ = {};
 
-		const rows = await this.selectAll('SELECT * FROM table_fields');
+		const rows = await this.selectAll(kysely.selectFrom('table_fields').selectAll());
 
 		for (let i = 0; i < rows.length; i++) {
 			const row = rows[i];

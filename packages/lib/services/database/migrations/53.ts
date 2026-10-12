@@ -1,4 +1,6 @@
-import { SqlQuery } from '../types';
+import { Migration } from '../types';
+import { kysely } from '../kysely';
+import { column, createTableQuery, intColumn, textColumn } from '../schemaUtils';
 
 // Recreate conflict_note_states with a numeric auto-increment primary key, to
 // match the convention used by the other tables. note_id keeps its uniqueness
@@ -6,17 +8,19 @@ import { SqlQuery } from '../types';
 // shipped in a release yet, so it is safe to drop and recreate it rather than
 // migrate the rows
 
-export default (): (SqlQuery|string)[] => {
+const migration: Migration = () => {
 	return [
-		'DROP TABLE IF EXISTS conflict_note_states',
-		`CREATE TABLE conflict_note_states (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			note_id TEXT NOT NULL UNIQUE,
-			base_body TEXT NOT NULL DEFAULT "",
-			base_title TEXT NOT NULL DEFAULT "",
-			remote_body TEXT NOT NULL DEFAULT "",
-			remote_title TEXT NOT NULL DEFAULT "",
-			remote_updated_time INT NOT NULL DEFAULT 0
-		)`,
+		kysely.schema.dropTable('conflict_note_states').ifExists(),
+		createTableQuery('conflict_note_states', [
+			column('id', 'integer', { primaryKey: true, autoIncrement: true }),
+			column('note_id', 'text', { notNull: true, unique: true }),
+			textColumn('base_body'),
+			textColumn('base_title'),
+			textColumn('remote_body'),
+			textColumn('remote_title'),
+			intColumn('remote_updated_time'),
+		]),
 	];
 };
+
+export default migration;

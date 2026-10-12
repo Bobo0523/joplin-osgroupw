@@ -14,6 +14,8 @@ import { MarkupLanguage } from '../../renderer';
 import { substrWithEllipsis } from '../string-utils';
 const { sprintf } = require('sprintf-js');
 import { wrapError } from '../errorUtils';
+import { kysely } from './database/kysely';
+import { literalList } from './database/sqlFragments';
 
 const logger = Logger.create('RevisionService');
 
@@ -127,25 +129,25 @@ export default class RevisionService extends BaseService {
 				// See synchronizer test units to see why changes coming
 				// from sync are skipped.
 				const changes: ItemChangeEntity[] = await ItemChange.modelSelectAll(
-					`
-					SELECT id, item_id, type, before_change_item
-					FROM item_changes
-					WHERE item_type = ?
-					AND source != ?
-					AND source != ?
-					AND id > ?
-					ORDER BY id ASC
-					LIMIT 10
-				`,
-					[BaseModel.TYPE_NOTE, ItemChange.SOURCE_SYNC, ItemChange.SOURCE_DECRYPTION, Setting.value('revisionService.lastProcessedChangeId')],
+					kysely.selectFrom('item_changes')
+						.select(['id', 'item_id', 'type', 'before_change_item'])
+						.where('item_type', '=', BaseModel.TYPE_NOTE)
+						.where('source', '!=', ItemChange.SOURCE_SYNC)
+						.where('source', '!=', ItemChange.SOURCE_DECRYPTION)
+						.where('id', '>', Setting.value('revisionService.lastProcessedChangeId'))
+						.orderBy('id', 'asc')
+						.limit(10),
 				);
 
 				if (!changes.length) break;
 
 				const noteIds = changes.map((a) => a.item_id);
-				const notes = await Note.modelSelectAll(`SELECT * FROM notes WHERE is_conflict = 0 AND encryption_applied = 0 AND id IN (${
-					Note.escapeIdsForSql(noteIds)
-				})`);
+				const notes = await Note.modelSelectAll(
+					kysely.selectFrom('notes').selectAll()
+						.where('is_conflict', '=', 0)
+						.where('encryption_applied', '=', 0)
+						.where('id', 'in', literalList(noteIds)),
+				);
 
 				for (let i = 0; i < changes.length; i++) {
 					const change = changes[i];

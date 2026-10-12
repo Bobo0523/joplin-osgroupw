@@ -1,0 +1,170 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`models/utils/queryOptions should apply the shared query options in the same way 1`] = `
+{
+  "allFieldsOnly": [
+    "id",
+    "title",
+    "type_",
+  ],
+  "allGlobalCaseInsensitive": [
+    "apple",
+    "Apple",
+    "Banana",
+    "cherry",
+    "note 10",
+    "note 9",
+    "other folder",
+    "todo done",
+    "todo open",
+  ],
+  "allIds": [
+    "Apple",
+    "other folder",
+    "todo done",
+  ],
+  "allOrderCaseInsensitive": [
+    "todo open",
+    "todo done",
+    "other folder",
+    "note 9",
+    "note 10",
+    "cherry",
+    "Banana",
+    "apple",
+    "Apple",
+  ],
+  "allWhere": [
+    "Apple",
+    "apple",
+    "cherry",
+    "note 10",
+  ],
+  "byIds": [
+    "Banana",
+    "apple",
+    "cherry",
+  ],
+  "byIdsEmpty": [],
+  "count": 9,
+  "countWhere": 2,
+  "folderSearch": [
+    "Work",
+    "work notes",
+  ],
+  "loadByField": "Banana",
+  "loadByFieldCaseSensitive": null,
+  "loadByFieldsFirstFieldCase": null,
+  "loadByFieldsLastFieldCase": "cherry",
+  "loadByPartialId": [
+    "apple",
+    "Banana",
+    "cherry",
+    "note 10",
+    "note 9",
+    "todo open",
+    "todo done",
+    "other folder",
+    "Apple",
+  ],
+  "loadByTitle": "cherry",
+  "paginatedFeed": {
+    "page1": {
+      "has_more": true,
+      "items": [
+        "apple",
+        "Apple",
+        "Banana",
+      ],
+    },
+    "page2": {
+      "has_more": true,
+      "items": [
+        "cherry",
+        "note 10",
+        "note 9",
+      ],
+    },
+    "pageAllCount": 9,
+    "pageAllKeys": [
+      "id",
+    ],
+  },
+  "previewsAnywhere": [
+    "apple",
+    "cherry",
+  ],
+  "previewsConditions": [
+    "apple",
+    "Apple",
+  ],
+  "previewsDefault": [
+    "todo done",
+    "todo open",
+    "note 9",
+    "note 10",
+    "cherry",
+    "Banana",
+    "apple",
+  ],
+  "previewsFields": [
+    "title",
+    "type_",
+  ],
+  "previewsHideCompleted": [
+    "apple",
+    "Banana",
+    "cherry",
+    "note 9",
+    "note 10",
+    "todo open",
+  ],
+  "previewsItemTypes": [
+    "todo done",
+    "todo open",
+  ],
+  "previewsOrderTitle": [
+    "apple",
+    "Banana",
+    "cherry",
+    "note 9",
+    "note 10",
+    "todo done",
+    "todo open",
+  ],
+  "previewsTitlePattern": [
+    "Apple",
+    "apple",
+  ],
+  "previewsTodosOnTop": [
+    "todo open",
+    "apple",
+    "Banana",
+    "cherry",
+    "note 9",
+    "note 10",
+    "todo done",
+  ],
+  "previewsTodosOnTopLimit": [
+    "todo open",
+    "apple",
+    "Banana",
+  ],
+  "searchBodyPattern": [
+    "apple",
+    "cherry",
+  ],
+  "searchConditions": [
+    "todo done",
+    "todo open",
+  ],
+  "searchTitlePattern": [
+    "note 10",
+    "note 9",
+  ],
+  "searchZeroLimit": [],
+  "tagNotes": [
+    "apple",
+  ],
+}
+`;

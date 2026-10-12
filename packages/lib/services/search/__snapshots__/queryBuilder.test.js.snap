@@ -1,0 +1,562 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`services/search/queryBuilder should return the same results for every filter combination 1`] = `
+{
+  "-body:world": {
+    "fts": [
+      "banana split",
+      "hello world",
+      "misc",
+      "png note",
+    ],
+    "nonlatin": [
+      "banana split",
+      "hello world",
+      "misc",
+      "png note",
+    ],
+  },
+  "-due:20300101": {
+    "fts": [
+      "banana split",
+      "hello",
+    ],
+    "nonlatin": [
+      "banana split",
+      "hello",
+    ],
+  },
+  "-hello": {
+    "fts": [
+      "banana split",
+      "cherry",
+      "png note",
+    ],
+    "nonlatin": [
+      "banana split",
+      "cherry",
+      "png note",
+    ],
+  },
+  "-id:{NOTE1}": {
+    "fts": [
+      "banana split",
+      "cherry",
+      "hello",
+      "misc",
+      "png note",
+    ],
+    "nonlatin": [
+      "banana split",
+      "cherry",
+      "hello",
+      "misc",
+      "png note",
+    ],
+  },
+  "-longitude:20": {
+    "fts": [
+      "banana split",
+      "cherry",
+      "hello",
+      "misc",
+      "png note",
+    ],
+    "nonlatin": [
+      "banana split",
+      "cherry",
+      "hello",
+      "misc",
+      "png note",
+    ],
+  },
+  "-notebook:Work": {
+    "fts": [
+      "banana split",
+      "misc",
+    ],
+    "nonlatin": [
+      "banana split",
+      "misc",
+    ],
+  },
+  "-resource:image/png": {
+    "fts": [
+      "banana split",
+      "cherry",
+      "hello",
+      "hello world",
+      "misc",
+    ],
+    "nonlatin": [
+      "banana split",
+      "cherry",
+      "hello",
+      "hello world",
+      "misc",
+    ],
+  },
+  "-sourceurl:https://example.com*": {
+    "fts": [
+      "banana split",
+      "cherry",
+      "hello",
+      "misc",
+      "png note",
+    ],
+    "nonlatin": [
+      "banana split",
+      "cherry",
+      "hello",
+      "misc",
+      "png note",
+    ],
+  },
+  "-tag:red": {
+    "fts": [
+      "cherry",
+      "hello",
+      "misc",
+      "png note",
+    ],
+    "nonlatin": [
+      "cherry",
+      "hello",
+      "misc",
+      "png note",
+    ],
+  },
+  "-title:hello": {
+    "fts": [
+      "banana split",
+      "cherry",
+      "misc",
+      "png note",
+    ],
+    "nonlatin": [
+      "banana split",
+      "cherry",
+      "misc",
+      "png note",
+    ],
+  },
+  "-updated:20300101": {
+    "fts": [
+      "banana split",
+      "cherry",
+      "hello",
+      "hello world",
+      "misc",
+      "png note",
+    ],
+    "nonlatin": [
+      "banana split",
+      "cherry",
+      "hello",
+      "hello world",
+      "misc",
+      "png note",
+    ],
+  },
+  "altitude:5": {
+    "fts": [
+      "hello world",
+    ],
+    "nonlatin": [
+      "hello world",
+    ],
+  },
+  "any:1 -hello -banana": {
+    "fts": [
+      "banana split",
+      "cherry",
+      "hello",
+      "misc",
+      "png note",
+    ],
+    "nonlatin": [
+      "banana split",
+      "cherry",
+      "hello",
+      "misc",
+      "png note",
+    ],
+  },
+  "any:1 -tag:red -tag:blue": {
+    "fts": [
+      "banana split",
+      "misc",
+    ],
+    "nonlatin": [
+      "banana split",
+      "misc",
+    ],
+  },
+  "any:1 -title:hello": {
+    "fts": [
+      "banana split",
+      "cherry",
+      "misc",
+      "png note",
+    ],
+    "nonlatin": [
+      "banana split",
+      "cherry",
+      "misc",
+      "png note",
+    ],
+  },
+  "any:1 hello banana": {
+    "fts": [
+      "banana split",
+      "hello",
+      "hello world",
+      "misc",
+    ],
+    "nonlatin": [
+      "banana split",
+      "hello",
+      "hello world",
+      "misc",
+    ],
+  },
+  "any:1 id:{NOTE1} id:{NOTE2}": {
+    "fts": [
+      "hello",
+      "hello world",
+    ],
+    "nonlatin": [
+      "hello",
+      "hello world",
+    ],
+  },
+  "any:1 resource:image/png tag:blue": {
+    "fts": [
+      "hello world",
+      "misc",
+      "png note",
+    ],
+    "nonlatin": [
+      "hello world",
+      "misc",
+      "png note",
+    ],
+  },
+  "any:1 tag:red tag:blue": {
+    "fts": [
+      "banana split",
+      "hello world",
+      "misc",
+    ],
+    "nonlatin": [
+      "banana split",
+      "hello world",
+      "misc",
+    ],
+  },
+  "any:1 type:todo iscompleted:1": {
+    "fts": [
+      "banana split",
+      "hello",
+    ],
+    "nonlatin": [
+      "banana split",
+      "hello",
+    ],
+  },
+  "body:world": {
+    "fts": [
+      "cherry",
+      "hello",
+    ],
+    "nonlatin": [
+      "cherry",
+      "hello",
+    ],
+  },
+  "created:20200101": {
+    "fts": [
+      "banana split",
+      "cherry",
+      "hello world",
+      "misc",
+      "png note",
+    ],
+    "nonlatin": [
+      "banana split",
+      "cherry",
+      "hello world",
+      "misc",
+      "png note",
+    ],
+  },
+  "due:20200101": {
+    "fts": [
+      "hello",
+    ],
+    "nonlatin": [
+      "hello",
+    ],
+  },
+  "hello": {
+    "fts": [
+      "hello",
+      "hello world",
+      "misc",
+    ],
+    "nonlatin": [
+      "hello",
+      "hello world",
+      "misc",
+    ],
+  },
+  "hello world": {
+    "fts": [
+      "hello",
+      "hello world",
+    ],
+    "nonlatin": [
+      "hello",
+      "hello world",
+    ],
+  },
+  "id:{NOTE1}": {
+    "fts": [
+      "hello world",
+    ],
+    "nonlatin": [
+      "hello world",
+    ],
+  },
+  "id:{NOTE1} hello": {
+    "fts": [
+      "hello world",
+    ],
+    "nonlatin": [
+      "hello world",
+    ],
+  },
+  "id:{NOTE1} notebook:Work": {
+    "fts": [],
+    "nonlatin": [],
+  },
+  "id:{NOTE1} resource:image/png": {
+    "fts": [],
+    "nonlatin": [],
+  },
+  "id:{NOTE1} tag:red": {
+    "fts": [],
+    "nonlatin": [],
+  },
+  "iscompleted:0": {
+    "fts": [
+      "banana split",
+    ],
+    "nonlatin": [
+      "banana split",
+    ],
+  },
+  "iscompleted:1": {
+    "fts": [
+      "hello",
+    ],
+    "nonlatin": [
+      "hello",
+    ],
+  },
+  "latitude:10": {
+    "fts": [
+      "hello world",
+    ],
+    "nonlatin": [
+      "hello world",
+    ],
+  },
+  "notebook:Wor*": {
+    "fts": [
+      "cherry",
+      "hello",
+      "hello world",
+      "png note",
+    ],
+    "nonlatin": [
+      "cherry",
+      "hello",
+      "hello world",
+      "png note",
+    ],
+  },
+  "notebook:Work": {
+    "fts": [
+      "cherry",
+      "hello",
+      "hello world",
+      "png note",
+    ],
+    "nonlatin": [
+      "cherry",
+      "hello",
+      "hello world",
+      "png note",
+    ],
+  },
+  "notebook:Work -notebook:Sub tag:blue": {
+    "fts": [
+      "hello world",
+    ],
+    "nonlatin": [
+      "hello world",
+    ],
+  },
+  "notebook:Work any:1 banana": {
+    "fts": [],
+    "nonlatin": [
+      "hello world",
+    ],
+  },
+  "notebook:Work any:1 tag:red tag:blue": {
+    "fts": [
+      "hello world",
+    ],
+    "nonlatin": [
+      "hello world",
+    ],
+  },
+  "notebook:Work hello": {
+    "fts": [
+      "hello",
+      "hello world",
+    ],
+    "nonlatin": [
+      "hello",
+      "hello world",
+    ],
+  },
+  "notebook:Work tag:red hello": {
+    "fts": [
+      "hello world",
+    ],
+    "nonlatin": [
+      "hello world",
+    ],
+  },
+  "resource:image/*": {
+    "fts": [
+      "hello world",
+      "misc",
+      "png note",
+    ],
+    "nonlatin": [
+      "hello world",
+      "misc",
+      "png note",
+    ],
+  },
+  "resource:image/jpeg": {
+    "fts": [
+      "hello world",
+      "misc",
+    ],
+    "nonlatin": [
+      "hello world",
+      "misc",
+    ],
+  },
+  "resource:image/png": {
+    "fts": [
+      "png note",
+    ],
+    "nonlatin": [
+      "png note",
+    ],
+  },
+  "sourceurl:https://example.com*": {
+    "fts": [
+      "hello world",
+    ],
+    "nonlatin": [
+      "hello world",
+    ],
+  },
+  "tag:r*": {
+    "fts": [
+      "banana split",
+      "hello world",
+    ],
+    "nonlatin": [
+      "banana split",
+      "hello world",
+    ],
+  },
+  "tag:red": {
+    "fts": [
+      "banana split",
+      "hello world",
+    ],
+    "nonlatin": [
+      "banana split",
+      "hello world",
+    ],
+  },
+  "tag:red tag:blue": {
+    "fts": [
+      "hello world",
+    ],
+    "nonlatin": [
+      "hello world",
+    ],
+  },
+  "title:hello": {
+    "fts": [
+      "hello",
+      "hello world",
+    ],
+    "nonlatin": [
+      "hello",
+      "hello world",
+    ],
+  },
+  "type:note": {
+    "fts": [
+      "cherry",
+      "hello world",
+      "misc",
+      "png note",
+    ],
+    "nonlatin": [
+      "cherry",
+      "hello world",
+      "misc",
+      "png note",
+    ],
+  },
+  "type:todo": {
+    "fts": [
+      "banana split",
+      "hello",
+    ],
+    "nonlatin": [
+      "banana split",
+      "hello",
+    ],
+  },
+  "updated:19990101": {
+    "fts": [
+      "banana split",
+      "cherry",
+      "hello",
+      "hello world",
+      "misc",
+      "png note",
+    ],
+    "nonlatin": [
+      "banana split",
+      "cherry",
+      "hello",
+      "hello world",
+      "misc",
+      "png note",
+    ],
+  },
+}
+`;

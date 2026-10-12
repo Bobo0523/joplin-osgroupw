@@ -1,8 +1,12 @@
-import { SqlQuery } from '../types';
+import { Migration } from '../types';
+import { kysely } from '../kysely';
+import { addColumnQuery, intColumn } from '../schemaUtils';
 
-export default (): (SqlQuery|string)[] => {
+const migration: Migration = () => {
 	return [
-		'ALTER TABLE `resources` ADD COLUMN blob_updated_time INT NOT NULL DEFAULT 0',
-		'UPDATE `resources` SET blob_updated_time = updated_time',
+		addColumnQuery('resources', intColumn('blob_updated_time')),
+		kysely.updateTable('resources').set(eb => ({ blob_updated_time: eb.ref('updated_time') })),
 	];
 };
+
+export default migration;

@@ -4,6 +4,7 @@ import migration27 from '../migrations/27';
 import migration33 from '../migrations/33';
 import migration35 from '../migrations/35';
 import migration42 from '../migrations/42';
+import { kysely } from '../services/database/kysely';
 
 interface MigrationScript {
 	exec: ()=> Promise<void>;
@@ -27,7 +28,7 @@ export default class Migration extends BaseModel {
 	}
 
 	public static migrationsToDo() {
-		return this.modelSelectAll('SELECT * FROM migrations ORDER BY number ASC');
+		return this.modelSelectAll(kysely.selectFrom('migrations').selectAll().orderBy('number', 'asc'));
 	}
 
 	public static script(number: number) {
